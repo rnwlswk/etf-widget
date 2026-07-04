@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ETF 및 금 실시간 모니터링 보드</title>
 
     <!-- PWA 설정을 위한 메타 태그 -->
@@ -18,9 +18,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap');
-        body { font-family: 'Pretendard', sans-serif; background-color: #030712; -webkit-tap-highlight-color: transparent; overflow: hidden; }
+        body { font-family: 'Pretendard', sans-serif; background-color: #030712; -webkit-tap-highlight-color: transparent; overflow: hidden; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
         .snap-x { scroll-snap-type: x mandatory; scroll-behavior: smooth; }
-        .snap-center { scroll-snap-align: center; }
+        .snap-center { scroll-snap-align: center; scroll-snap-stop: always; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .active-scale:active { transform: scale(0.95); }
@@ -30,13 +30,13 @@
 <body class="text-slate-100 min-h-screen flex flex-col justify-between items-center p-4 select-none">
 
     <!-- 플로팅 새로고침 버튼 (상단 헤더 제거 후 화면 우하단에 고정 배치) -->
-    <button id="refresh-btn" onclick="executeFullUpdate()" class="fixed bottom-6 right-6 z-40 active-scale w-16 h-16 rounded-full bg-blue-600 hover:bg-blue-500 transition-all text-white shadow-xl shadow-blue-900/40 flex items-center justify-center">
-        <svg id="refresh-icon" xmlns="http://www.w3.org/2000/svg" class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <button id="refresh-btn" onclick="executeFullUpdate()" class="fixed bottom-5 right-5 z-40 active-scale w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-500 transition-all text-white shadow-xl shadow-blue-900/40 flex items-center justify-center">
+        <svg id="refresh-icon" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17" />
         </svg>
     </button>
 
-    <div class="w-full max-w-md flex flex-col justify-between h-[calc(100vh-16px)] pt-3 space-y-4">
+    <div class="w-full flex flex-col justify-between h-[calc(100vh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))] pt-3 space-y-4">
 
         <!-- 메인 슬라이더 영역 -->
         <main class="flex-1 min-h-0 w-full relative">
@@ -66,9 +66,8 @@
         </main>
 
         <!-- 하단 인디케이터 -->
-        <footer class="shrink-0 space-y-3 pb-2">
-            <div class="flex justify-center items-center gap-2" id="slider-dots"></div>
-            <p class="text-center text-[14px] text-slate-400 font-medium">손가락으로 좌우 슬라이드(스와이프)하여 상세 정보를 확인하세요.</p>
+        <footer class="shrink-0 pb-2">
+            <div class="flex justify-center items-center gap-1.5" id="slider-dots"></div>
         </footer>
 
         <!-- 알림 토스트 메시지 -->
@@ -142,7 +141,7 @@
                 let activeColor = "bg-emerald-500";
                 if (i === 0) activeColor = "bg-blue-500";
                 else if (i === lastIndex) activeColor = "bg-violet-500";
-                dot.className = `h-2.5 rounded-full transition-all duration-300 ${currentSlide === i ? `w-6 ${activeColor}` : 'w-2.5 bg-slate-700'}`;
+                dot.className = `h-1.5 rounded-full transition-all duration-300 ${currentSlide === i ? `w-4 ${activeColor}` : 'w-1.5 bg-slate-700'}`;
                 dotsContainer.appendChild(dot);
             }
         }
