@@ -42,8 +42,8 @@
         <main class="flex-1 min-h-0 w-full relative">
             <div id="main-slider" class="flex w-full h-full overflow-x-auto snap-x snap-mandatory no-scrollbar">
 
-                <!-- 첫 화면: 요약 리스트 -->
-                <div class="w-full h-full shrink-0 snap-center flex flex-col justify-start space-y-2 p-0.5">
+                <!-- 요약 리스트 슬라이드 (렌더링 시 두 번째 위치로 재배치됨) -->
+                <div id="summary-slide" class="w-full h-full shrink-0 snap-center flex flex-col justify-start space-y-2 p-0.5">
                     <div class="px-2 flex items-center gap-1.5 text-[13px] text-slate-300 font-mono shrink-0">
                         <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-500 shrink-0"></span>
                         <span id="status-text">연동 대기</span>
@@ -143,15 +143,15 @@
 
         function updateDots() {
             const dotsContainer = document.getElementById("slider-dots");
-            const globalIndexSlide = ETF_DATABASE.length + 1; // 종목들 다음, 계산기 이전
-            const lastIndex = ETF_DATABASE.length + 2; // 요약(0) + 종목들 + 글로벌지수 + 계산기(마지막)
+            const summarySlide = 1; // 글로벌지수(0) 다음, 종목들 이전
+            const lastIndex = ETF_DATABASE.length + 2; // 글로벌지수(0) + 요약(1) + 종목들 + 계산기(마지막)
             dotsContainer.innerHTML = "";
             for (let i = 0; i <= lastIndex; i++) {
                 const dot = document.createElement("button");
                 dot.onclick = () => slideTo(i);
                 let activeColor = "bg-emerald-500";
-                if (i === 0) activeColor = "bg-blue-500";
-                else if (i === globalIndexSlide) activeColor = "bg-cyan-500";
+                if (i === 0) activeColor = "bg-cyan-500";
+                else if (i === summarySlide) activeColor = "bg-blue-500";
                 else if (i === lastIndex) activeColor = "bg-violet-500";
                 dot.className = `h-1.5 rounded-full transition-all duration-300 ${currentSlide === i ? `w-4 ${activeColor}` : 'w-1.5 bg-slate-700'}`;
                 dotsContainer.appendChild(dot);
@@ -438,7 +438,7 @@
 
         function renderSummaryRow(itemObj, index, view) {
             const row = document.createElement("div");
-            row.onclick = () => slideTo(index + 1);
+            row.onclick = () => slideTo(index + 2);
             row.className = "bg-slate-900/70 border border-slate-700/60 active-scale rounded-2xl p-4 flex justify-between items-center cursor-pointer transition-all duration-200 hover:border-slate-600 hover:bg-slate-900";
             row.innerHTML = `
                 <div class="flex-1 min-w-0 pr-2">
@@ -499,7 +499,7 @@
                                 <span class="text-[14px] px-3 py-1.5 rounded-md bg-slate-950 ${itemObj.isGold ? 'text-amber-500 border-amber-900/50' : 'text-slate-400 border-slate-700'} font-mono font-bold border">${itemObj.ticker}</span>
                                 <h3 class="text-[19px] font-black text-white mt-2.5 leading-snug break-keep tracking-tight">${itemObj.name}</h3>
                             </div>
-                            <button onclick="slideTo(0)" class="shrink-0 active-scale text-[15px] px-4 py-2.5 bg-slate-800 hover:bg-slate-700 font-extrabold rounded-xl text-slate-200 border border-slate-600 shadow-sm transition">
+                            <button onclick="slideTo(1)" class="shrink-0 active-scale text-[15px] px-4 py-2.5 bg-slate-800 hover:bg-slate-700 font-extrabold rounded-xl text-slate-200 border border-slate-600 shadow-sm transition">
                                 ← 목록
                             </button>
                         </div>
@@ -617,7 +617,7 @@
                                 <span class="text-[14px] px-3 py-1.5 rounded-md bg-slate-950 text-violet-400 border border-violet-900/50 font-mono font-bold">CALCULATOR</span>
                                 <h3 class="text-[19px] font-black text-white mt-2.5 leading-snug">내 분배금 계산기</h3>
                             </div>
-                            <button onclick="slideTo(0)" class="shrink-0 active-scale text-[15px] px-4 py-2.5 bg-slate-800 hover:bg-slate-700 font-extrabold rounded-xl text-slate-200 border border-slate-600 shadow-sm transition">
+                            <button onclick="slideTo(1)" class="shrink-0 active-scale text-[15px] px-4 py-2.5 bg-slate-800 hover:bg-slate-700 font-extrabold rounded-xl text-slate-200 border border-slate-600 shadow-sm transition">
                                 ← 목록
                             </button>
                         </div>
@@ -689,7 +689,7 @@
                                 <span class="text-[13px] px-2.5 py-1 rounded-md bg-slate-950 text-cyan-400 border border-cyan-900/50 font-mono font-bold">GLOBAL</span>
                                 <h3 class="text-[17px] font-black text-white mt-1.5 leading-snug">글로벌 지수 · 환율 · 금</h3>
                             </div>
-                            <button onclick="slideTo(0)" class="shrink-0 active-scale text-[14px] px-3.5 py-2 bg-slate-800 hover:bg-slate-700 font-extrabold rounded-xl text-slate-200 border border-slate-600 shadow-sm transition">
+                            <button onclick="slideTo(1)" class="shrink-0 active-scale text-[14px] px-3.5 py-2 bg-slate-800 hover:bg-slate-700 font-extrabold rounded-xl text-slate-200 border border-slate-600 shadow-sm transition">
                                 ← 목록
                             </button>
                         </div>
@@ -706,12 +706,14 @@
         // 렌더링 함수: 슬라이더 뷰 생성
         function renderApp() {
             const summaryContainer = document.getElementById("summary-list-container");
+            const summarySlide = document.getElementById("summary-slide");
             const slider = document.getElementById("main-slider");
 
             summaryContainer.innerHTML = "";
-            while (slider.children.length > 1) {
-                slider.removeChild(slider.lastChild);
-            }
+            slider.innerHTML = ""; // summarySlide는 JS 참조로 이미 잡아뒀으므로 재부착 가능
+
+            slider.appendChild(renderGlobalIndexSlide()); // 1번째: 글로벌 지수
+            slider.appendChild(summarySlide);              // 2번째: 요약(금+ETF 현재가) 리스트
 
             ETF_DATABASE.forEach((itemObj, index) => {
                 const view = buildDisplayValues(itemObj);
@@ -719,7 +721,6 @@
                 slider.appendChild(renderDetailCard(itemObj, view));
             });
 
-            slider.appendChild(renderGlobalIndexSlide());
             slider.appendChild(renderCalculatorSlide());
             updateCalculator();
 
