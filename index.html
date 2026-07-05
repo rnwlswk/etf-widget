@@ -99,6 +99,16 @@
         // 계산기 탭에서 입력한 보유 주식수 (세션 메모리에만 보관 - 새로고침 시에도 값 유지)
         const userShares = {};
 
+        // 글로벌 지수/환율/금 (야후 파이낸스 기반 - KIS와 별개의 백엔드 라우트)
+        const GLOBAL_INDEX_LIST = [
+            { key: "sp500", name: "S&P 500" },
+            { key: "nasdaq100", name: "나스닥 100" },
+            { key: "us30y", name: "미국 30년 국채금리" },
+            { key: "kospi", name: "코스피 지수" },
+            { key: "gold", name: "국제 금(온스당 달러)" },
+            { key: "usdkrw", name: "원/달러 환율" }
+        ].map(item => ({ ...item, price: null, previousClose: null, currency: null }));
+
         // 상태 점(dot) + 텍스트 스타일 프리셋
         const STATUS_STYLES = {
             loading:  { dot: "bg-blue-400 animate-ping", text: "단일 통신 요청 중" },
@@ -133,13 +143,15 @@
 
         function updateDots() {
             const dotsContainer = document.getElementById("slider-dots");
-            const lastIndex = ETF_DATABASE.length + 1; // 요약(0) + 종목들 + 계산기(마지막)
+            const globalIndexSlide = ETF_DATABASE.length + 1; // 종목들 다음, 계산기 이전
+            const lastIndex = ETF_DATABASE.length + 2; // 요약(0) + 종목들 + 글로벌지수 + 계산기(마지막)
             dotsContainer.innerHTML = "";
             for (let i = 0; i <= lastIndex; i++) {
                 const dot = document.createElement("button");
                 dot.onclick = () => slideTo(i);
                 let activeColor = "bg-emerald-500";
                 if (i === 0) activeColor = "bg-blue-500";
+                else if (i === globalIndexSlide) activeColor = "bg-cyan-500";
                 else if (i === lastIndex) activeColor = "bg-violet-500";
                 dot.className = `h-1.5 rounded-full transition-all duration-300 ${currentSlide === i ? `w-4 ${activeColor}` : 'w-1.5 bg-slate-700'}`;
                 dotsContainer.appendChild(dot);
@@ -275,6 +287,24 @@
             return priceSuccess;
         }
 
+        // 글로벌 지수/환율/금 1건 조회 (야후 파이낸스 경유)
+        async function fetchGlobalIndex(itemObj) {
+            try {
+                const res = await fetch(`${MY_SERVER}/api/global/${itemObj.key}`);
+                if (!res.ok) throw new Error("글로벌 지수 서버 오류");
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || "데이터 없음");
+
+                itemObj.price = data.price;
+                itemObj.previousClose = data.previousClose;
+                itemObj.currency = data.currency;
+                return true;
+            } catch (e) {
+                console.warn(`[${itemObj.key}] 글로벌 지수 로드 오류:`, e);
+                return false;
+            }
+        }
+
         async function executeFullUpdate() {
             if (isRefreshing) return;
             isRefreshing = true;
@@ -289,6 +319,7 @@
 
             try {
                 const results = await Promise.all(ETF_DATABASE.map(updateSingleItem));
+                await Promise.all(GLOBAL_INDEX_LIST.map(fetchGlobalIndex));
                 const successCount = results.filter(Boolean).length;
                 const now = new Date().toLocaleTimeString();
 
@@ -617,6 +648,61 @@
             return slide;
         }
 
+        // 글로벌 지수/환율/금 슬라이드
+        function renderGlobalIndexSlide() {
+            const rows = GLOBAL_INDEX_LIST.map(itemObj => {
+                const hasValue = itemObj.price !== null && itemObj.price !== undefined;
+                let displayPrice = "로딩 중...";
+                let displayChange = "-";
+                let changeColorClass = "text-slate-500";
+
+                if (hasValue) {
+                    const decimals = itemObj.key === "usdkrw" ? 2 : (itemObj.key === "us30y" ? 3 : 2);
+                    displayPrice = itemObj.price.toLocaleString("ko-KR", { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
+                    if (itemObj.previousClose) {
+                        const diff = itemObj.price - itemObj.previousClose;
+                        const diffRate = (diff / itemObj.previousClose) * 100;
+                        const isPositive = diff >= 0;
+                        changeColorClass = isPositive ? "text-rose-500 font-bold" : "text-blue-400 font-bold";
+                        displayChange = `${isPositive ? "▲" : "▼"}${Math.abs(diff).toFixed(decimals)} (${isPositive ? "+" : ""}${diffRate.toFixed(2)}%)`;
+                    }
+                }
+
+                return `
+                    <div class="bg-slate-950/30 border border-slate-700/50 rounded-xl p-3 flex justify-between items-center">
+                        <span class="text-[15px] font-bold text-slate-200">${itemObj.name}</span>
+                        <div class="text-right">
+                            <div class="text-[17px] font-black text-white">${displayPrice}</div>
+                            <div class="text-[13px] ${changeColorClass}">${displayChange}</div>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+
+            const slide = document.createElement("div");
+            slide.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5";
+            slide.innerHTML = `
+                <div class="bg-slate-900/80 border border-slate-700 rounded-[1.5rem] p-3.5 flex-1 flex flex-col justify-center shadow-2xl relative overflow-y-auto no-scrollbar">
+                    <div class="space-y-2 relative z-10">
+                        <div class="flex justify-between items-start gap-2">
+                            <div>
+                                <span class="text-[13px] px-2.5 py-1 rounded-md bg-slate-950 text-cyan-400 border border-cyan-900/50 font-mono font-bold">GLOBAL</span>
+                                <h3 class="text-[17px] font-black text-white mt-1.5 leading-snug">글로벌 지수 · 환율 · 금</h3>
+                            </div>
+                            <button onclick="slideTo(0)" class="shrink-0 active-scale text-[14px] px-3.5 py-2 bg-slate-800 hover:bg-slate-700 font-extrabold rounded-xl text-slate-200 border border-slate-600 shadow-sm transition">
+                                ← 목록
+                            </button>
+                        </div>
+                        <p class="text-[13px] text-slate-400 leading-relaxed">야후 파이낸스 기준이며, 미국 30년 국채는 가격이 아닌 금리(%)입니다.</p>
+                        <div class="space-y-2">
+                            ${rows}
+                        </div>
+                    </div>
+                </div>
+            `;
+            return slide;
+        }
+
         // 렌더링 함수: 슬라이더 뷰 생성
         function renderApp() {
             const summaryContainer = document.getElementById("summary-list-container");
@@ -633,6 +719,7 @@
                 slider.appendChild(renderDetailCard(itemObj, view));
             });
 
+            slider.appendChild(renderGlobalIndexSlide());
             slider.appendChild(renderCalculatorSlide());
             updateCalculator();
 
