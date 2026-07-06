@@ -50,13 +50,6 @@
                         <span class="text-slate-500">·</span>
                         <span id="update-timestamp">-</span>
                     </div>
-                    <div class="px-2 flex justify-between items-center text-[15px] text-slate-300 font-bold uppercase tracking-wider shrink-0 mb-1">
-                        <span>보유 자산 리스트</span>
-                        <div class="flex gap-8">
-                            <span>현재가 / 전일비</span>
-                            <span class="w-12 text-right">괴리율</span>
-                        </div>
-                    </div>
                     <div class="flex-1 overflow-y-auto no-scrollbar space-y-3 pb-20" id="summary-list-container">
                         <!-- 자산 목록이 여기에 동적으로 추가됩니다 -->
                     </div>
@@ -305,6 +298,21 @@
             }
         }
 
+        // 금현물(KRX) 가격을 국제금(USD/oz) x 환율로 환산해 괴리율 계산
+        // 1트로이온스 = 31.1034768g 기준
+        function updateGoldDiscrepancy() {
+            const goldItem = ETF_DATABASE.find(item => item.isGold);
+            const goldGlobal = GLOBAL_INDEX_LIST.find(item => item.key === "gold");
+            const usdkrwGlobal = GLOBAL_INDEX_LIST.find(item => item.key === "usdkrw");
+            if (!goldItem || !goldGlobal || !usdkrwGlobal) return;
+            if (!goldItem.price || !goldGlobal.price || !usdkrwGlobal.price) return;
+
+            const GRAMS_PER_OUNCE = 31.1034768;
+            const intlPriceKRWPerGram = (goldGlobal.price / GRAMS_PER_OUNCE) * usdkrwGlobal.price;
+            goldItem.nav = intlPriceKRWPerGram;
+            goldItem.discrepancy = ((goldItem.price - intlPriceKRWPerGram) / intlPriceKRWPerGram) * 100;
+        }
+
         async function executeFullUpdate() {
             if (isRefreshing) return;
             isRefreshing = true;
@@ -320,6 +328,7 @@
             try {
                 const results = await Promise.all(ETF_DATABASE.map(updateSingleItem));
                 await Promise.all(GLOBAL_INDEX_LIST.map(fetchGlobalIndex));
+                updateGoldDiscrepancy();
                 const successCount = results.filter(Boolean).length;
                 const now = new Date().toLocaleTimeString();
 
@@ -361,7 +370,10 @@
 
             const isUp = changeRate >= 0;
             const strokeColor = isUp ? "#f43f5e" : "#3b82f6";
-            const chartUrl = `https://ssl.pstatic.net/imgfinance/chart/item/area/day/${ticker}.png?sidcode=${Date.now()}`;
+            // 금현물(M04020000)은 네이버가 차트를 제공하지 않는 특수 상품코드라
+            // 금 가격을 거의 1:1로 추종하는 ACE KRX금현물 ETF(411060) 차트로 대체
+            const chartTicker = ticker === "M04020000" ? "411060" : ticker;
+            const chartUrl = `https://ssl.pstatic.net/imgfinance/chart/item/area/day/${chartTicker}.png?sidcode=${Date.now()}`;
             const trendFactor = Math.max(-25, Math.min(25, changeRate * 8));
             const endY = 50 - trendFactor;
 
@@ -416,22 +428,21 @@
             if (itemObj.isGold) {
                 view.displayVolume = itemObj.volume ? formatNumber(itemObj.volume) + "g" : "집계 불가";
                 view.displayMCap = "한국거래소(KRX)";
-                view.badgeColorClass = "text-amber-400 bg-amber-950/50 border-amber-900/40";
-                view.displayDiscrepancy = "금 현물";
             } else {
                 view.displayVolume = itemObj.volume ? formatNumber(itemObj.volume) + "주" : "0주";
                 view.displayMCap = itemObj.marketCap ? formatNumber(itemObj.marketCap) + "억 원" : "정보 없음";
+            }
 
-                if (itemObj.discrepancy !== null && itemObj.discrepancy !== undefined) {
-                    const discVal = itemObj.discrepancy;
-                    view.displayDiscrepancy = `${discVal > 0 ? "+" : ""}${discVal.toFixed(2)}%`;
-                    view.badgeColorClass = discVal > 0
-                        ? 'text-rose-400 bg-rose-950/50 border-rose-900/40'
-                        : (discVal < 0 ? 'text-blue-400 bg-blue-950/50 border-blue-900/40' : 'text-slate-400 bg-slate-900 border-slate-700');
-                } else {
-                    view.displayDiscrepancy = "수집 대기";
-                    view.badgeColorClass = "text-slate-400 bg-slate-900 border-slate-700";
-                }
+            // 괴리율: ETF는 NAV 대비, 금현물은 국제금 환산가(KRW/g) 대비로 동일한 방식으로 계산됨
+            if (itemObj.discrepancy !== null && itemObj.discrepancy !== undefined) {
+                const discVal = itemObj.discrepancy;
+                view.displayDiscrepancy = `${discVal > 0 ? "+" : ""}${discVal.toFixed(2)}%`;
+                view.badgeColorClass = discVal > 0
+                    ? 'text-rose-400 bg-rose-950/50 border-rose-900/40'
+                    : (discVal < 0 ? 'text-blue-400 bg-blue-950/50 border-blue-900/40' : 'text-slate-400 bg-slate-900 border-slate-700');
+            } else {
+                view.displayDiscrepancy = "수집 대기";
+                view.badgeColorClass = "text-slate-400 bg-slate-900 border-slate-700";
             }
             return view;
         }
@@ -449,7 +460,7 @@
                     <div class="text-[15px] ${view.changeColorClass} mt-1">${view.displayChange}</div>
                 </div>
                 <div class="shrink-0 text-right min-w-[82px]">
-                    <span class="text-[15px] font-bold px-2.5 py-2 rounded-md border inline-block ${itemObj.isGold ? 'text-amber-500 border-amber-900/50 bg-amber-950/30' : view.badgeColorClass}">
+                    <span class="text-[15px] font-bold px-2.5 py-2 rounded-md border inline-block ${view.badgeColorClass}">
                         ${view.displayDiscrepancy}
                     </span>
                 </div>
@@ -458,12 +469,12 @@
         }
 
         function renderDetailCard(itemObj, view) {
-            // 금 현물은 NAV/괴리율 블록 미출력
-            const navBlock = itemObj.isGold ? '' : `
+            const navLabel = itemObj.isGold ? "국제금 환산가(원/g)" : "실시간 NAV";
+            const navBlock = `
                 <div class="grid grid-cols-2 gap-3 text-[16px]">
                     <div class="flex flex-col justify-center items-start bg-slate-950/30 px-4 py-2.5 rounded-xl border border-slate-700/50">
-                        <span class="text-slate-300 text-[15px] font-bold mb-1">실시간 NAV</span>
-                        <span class="font-extrabold text-slate-200">${itemObj.nav ? formatNumber(itemObj.nav) + "원" : "수집 지연"}</span>
+                        <span class="text-slate-300 text-[15px] font-bold mb-1">${navLabel}</span>
+                        <span class="font-extrabold text-slate-200">${itemObj.nav ? formatNumber(Math.round(itemObj.nav)) + "원" : "수집 지연"}</span>
                     </div>
                     <div class="flex flex-col justify-center items-end bg-slate-950/30 px-4 py-2.5 rounded-xl border border-slate-700/50 text-right">
                         <span class="text-slate-300 text-[15px] font-bold mb-1">실시간 괴리율</span>
@@ -493,12 +504,7 @@
             slideCard.innerHTML = `
                 <div class="bg-slate-900/80 border border-slate-700 rounded-[1.5rem] p-3.5 flex-1 flex flex-col justify-center shadow-2xl relative overflow-y-auto no-scrollbar">
                     <div class="space-y-2 relative z-10">
-                        <div class="flex justify-between items-start gap-2">
-                            <h3 class="text-[21px] font-black text-white leading-snug break-keep tracking-tight">${itemObj.name}</h3>
-                            <button onclick="slideTo(1)" class="shrink-0 active-scale text-[16px] px-3.5 py-2 bg-slate-800 hover:bg-slate-700 font-extrabold rounded-xl text-slate-200 border border-slate-600 shadow-sm transition">
-                                ← 목록
-                            </button>
-                        </div>
+                        <h3 class="text-[21px] font-black text-white leading-snug break-keep tracking-tight">${itemObj.name}</h3>
 
                         <div class="grid grid-cols-2 gap-2 bg-slate-950/60 border border-slate-800/80 rounded-2xl p-3 shadow-inner">
                             <div>
@@ -604,12 +610,7 @@
             slide.innerHTML = `
                 <div class="bg-slate-900/80 border border-slate-700 rounded-[1.5rem] p-3.5 flex-1 flex flex-col shadow-2xl relative overflow-y-auto no-scrollbar">
                     <div class="space-y-2 relative z-10">
-                        <div class="flex justify-between items-start gap-2">
-                            <h3 class="text-[21px] font-black text-white leading-snug">내 분배금 계산기</h3>
-                            <button onclick="slideTo(1)" class="shrink-0 active-scale text-[16px] px-3.5 py-2 bg-slate-800 hover:bg-slate-700 font-extrabold rounded-xl text-slate-200 border border-slate-600 shadow-sm transition">
-                                ← 목록
-                            </button>
-                        </div>
+                        <h3 class="text-[21px] font-black text-white leading-snug">내 분배금 계산기</h3>
 
                         <div class="space-y-2">
                             ${rows}
@@ -663,7 +664,7 @@
                         <div class="text-right">
                             <div class="text-[18px] font-black text-white">${displayPrice}</div>
                             <div class="text-[14px] ${changeColorClass}">${displayChange}</div>
-                            <div class="text-[13px] text-slate-500">전일 종가 ${displayPrevClose}</div>
+                            <div class="text-[13px] text-white">전일 종가 ${displayPrevClose}</div>
                         </div>
                     </div>
                 `;
@@ -674,15 +675,7 @@
             slide.innerHTML = `
                 <div class="bg-slate-900/80 border border-slate-700 rounded-[1.5rem] p-3.5 flex-1 flex flex-col justify-center shadow-2xl relative overflow-y-auto no-scrollbar">
                     <div class="space-y-2 relative z-10">
-                        <div class="flex justify-between items-start gap-2">
-                            <h3 class="text-[21px] font-black text-white leading-snug">글로벌 지수 · 환율 · 금</h3>
-                            <button onclick="slideTo(1)" class="shrink-0 active-scale text-[15px] px-3.5 py-2 bg-slate-800 hover:bg-slate-700 font-extrabold rounded-xl text-slate-200 border border-slate-600 shadow-sm transition">
-                                ← 목록
-                            </button>
-                        </div>
-                        <div class="space-y-2">
-                            ${rows}
-                        </div>
+                        ${rows}
                     </div>
                 </div>
             `;
