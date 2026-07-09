@@ -1,1 +1,720 @@
-11111
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ETF 및 금 실시간 모니터링 보드</title>
+
+    <!-- PWA 설정을 위한 메타 태그 -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Market Live">
+    <meta name="theme-color" content="#f8fafc">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3135/3135715.png">
+
+    <link rel="manifest" href="manifest.json">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap');
+        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; color: #0f172a; -webkit-tap-highlight-color: transparent; overflow: hidden; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+        .snap-x { scroll-snap-type: x mandatory; scroll-behavior: smooth; }
+        .snap-center { scroll-snap-align: center; scroll-snap-stop: always; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .active-scale:active { transform: scale(0.95); }
+        .cooldown-btn { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+    </style>
+</head>
+<body class="text-slate-900 min-h-screen flex flex-col justify-between items-center p-4 select-none">
+
+    <!-- 플로팅 새로고침 버튼 (상단 헤더 제거 후 화면 우하단에 고정 배치) -->
+    <button id="refresh-btn" onclick="executeFullUpdate()" class="fixed bottom-5 right-5 z-40 active-scale w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-700 transition-all text-white shadow-xl shadow-blue-900/40 flex items-center justify-center">
+        <svg id="refresh-icon" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17" />
+        </svg>
+    </button>
+
+    <div class="w-full flex flex-col justify-between h-[calc(100vh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))] pt-3 space-y-4">
+
+        <!-- 메인 슬라이더 영역 -->
+        <main class="flex-1 min-h-0 w-full relative">
+            <div id="main-slider" class="flex w-full h-full overflow-x-auto snap-x snap-mandatory no-scrollbar">
+
+                <!-- 요약 리스트 슬라이드 (렌더링 시 두 번째 위치로 재배치됨) -->
+                <div id="summary-slide" class="w-full h-full shrink-0 snap-center flex flex-col justify-start space-y-2 p-0.5">
+                    <div class="px-2 flex items-center gap-1.5 text-[14px] text-slate-600 font-mono shrink-0">
+                        <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
+                        <span id="status-text">연동 대기</span>
+                        <span class="text-slate-500">·</span>
+                        <span id="update-timestamp">-</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto no-scrollbar space-y-0.5 pb-20" id="summary-list-container">
+                        <!-- 자산 목록이 여기에 동적으로 추가됩니다 -->
+                    </div>
+                </div>
+
+            </div>
+        </main>
+
+        <!-- 하단 인디케이터 -->
+        <footer class="shrink-0 pb-2">
+            <div class="flex justify-center items-center gap-1.5" id="slider-dots"></div>
+        </footer>
+
+        <!-- 알림 토스트 메시지 -->
+        <div id="toast" class="fixed bottom-16 left-1/2 -translate-x-1/2 px-5 py-2.5 bg-white border rounded-full shadow-2xl text-[16px] font-bold opacity-0 pointer-events-none transition-all duration-300 z-50 flex items-center gap-2">
+            <span id="toast-indicator" class="w-2 h-2 rounded-full"></span><span id="toast-msg">-</span>
+        </div>
+    </div>
+
+    <script>
+        // 백엔드 프록시 서버 주소 (배포된 Render 서버 URL)
+        const MY_SERVER = "https://kis-proxy-server-k0g3.onrender.com";
+
+        // 종목 데이터베이스 (분배율 필드는 제외, 분배금/지급일은 유지)
+        const ETF_DATABASE = [
+            { id: "GOLD", name: "KRX 금 현물 (1kg)", ticker: "M04020000", isGold: true },
+            { id: "TIGER_NSQ100_DAILY_CC", name: "TIGER 미국나스닥100타겟데일리커버드콜", ticker: "486290", isGold: false },
+            { id: "TIGER_SP500_DAILY_CC", name: "TIGER 미국S&P500타겟데일리커버드콜", ticker: "482730", isGold: false },
+            { id: "TIGER_US30_CC", name: "TIGER 미국30년국채커버드콜액티브", ticker: "476550", isGold: false },
+            { id: "RISE_200_WEEKLY_CC", name: "RISE 200위클리커버드콜", ticker: "475720", isGold: false },
+            { id: "KODEX_FIN_DIV", name: "KODEX 금융고배당TOP10타겟위클리커버드콜", ticker: "498410", isGold: false },
+            { id: "TIGER_REITS", name: "TIGER 리츠부동산인프라", ticker: "329200", isGold: false }
+        ].map(item => ({
+            ...item,
+            price: null, prevClose: null, changeRate: null, changeAmt: null,
+            discrepancy: null, nav: null, volume: null, marketCap: null,
+            divAmt: null, divAmtRaw: null, recordDate: null
+        }));
+
+        // 계산기 탭에서 입력한 보유 주식수 (세션 메모리에만 보관 - 새로고침 시에도 값 유지)
+        const userShares = {};
+
+        // 글로벌 지수/환율/금 (야후 파이낸스 기반 - KIS와 별개의 백엔드 라우트)
+        const GLOBAL_INDEX_LIST = [
+            { key: "sp500", name: "S&P 500" },
+            { key: "nasdaq100", name: "나스닥 100" },
+            { key: "us30y", name: "미국 30년 국채금리" },
+            { key: "kospi", name: "코스피 지수" },
+            { key: "gold", name: "국제 금(온스당 달러)" },
+            { key: "usdkrw", name: "원/달러 환율" }
+        ].map(item => ({ ...item, price: null, previousClose: null, currency: null }));
+
+        // 상태 점(dot) + 텍스트 스타일 프리셋
+        const STATUS_STYLES = {
+            loading:  { dot: "bg-blue-500 animate-ping", text: "단일 통신 요청 중" },
+            success:  { dot: "bg-emerald-500",           text: "LIVE (실시간)" },
+            partial:  { dot: "bg-emerald-500",           text: "LIVE (실시간)" },
+            error:    { dot: "bg-rose-500",              text: "수신 오류" }
+        };
+
+        let currentSlide = 0;
+        let isRefreshing = false;
+
+        function formatNumber(num) {
+            if (num === undefined || num === null || isNaN(num)) return "-";
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        function slideTo(index) {
+            const slider = document.getElementById("main-slider");
+            slider.scrollTo({ left: slider.clientWidth * index, behavior: "smooth" });
+            currentSlide = index;
+            updateDots();
+        }
+
+        function handleSliderScroll() {
+            const slider = document.getElementById("main-slider");
+            const index = Math.round(slider.scrollLeft / slider.clientWidth);
+            if (currentSlide !== index) {
+                currentSlide = index;
+                updateDots();
+            }
+        }
+
+        function updateDots() {
+            const dotsContainer = document.getElementById("slider-dots");
+            const summarySlide = 1; // 글로벌지수(0) 다음, 종목들 이전
+            const lastIndex = ETF_DATABASE.length + 2; // 글로벌지수(0) + 요약(1) + 종목들 + 계산기(마지막)
+            dotsContainer.innerHTML = "";
+            for (let i = 0; i <= lastIndex; i++) {
+                const dot = document.createElement("button");
+                dot.onclick = () => slideTo(i);
+                let activeColor = "bg-emerald-600";
+                if (i === 0) activeColor = "bg-cyan-600";
+                else if (i === summarySlide) activeColor = "bg-blue-600";
+                else if (i === lastIndex) activeColor = "bg-violet-600";
+                dot.className = `h-1.5 rounded-full transition-all duration-300 ${currentSlide === i ? `w-4 ${activeColor}` : 'w-1.5 bg-slate-200'}`;
+                dotsContainer.appendChild(dot);
+            }
+        }
+
+        let toastTimeout;
+        function showProgressToast(message, type = "blue") {
+            const toast = document.getElementById("toast");
+            const toastMsg = document.getElementById("toast-msg");
+            const toastInd = document.getElementById("toast-indicator");
+
+            const TOAST_STYLES = {
+                blue:    { dot: "bg-blue-500 animate-pulse", border: "border-blue-200 text-blue-600" },
+                emerald: { dot: "bg-emerald-500",            border: "border-emerald-200 text-emerald-600" },
+                rose:    { dot: "bg-rose-500",               border: "border-rose-200 text-rose-600" }
+            };
+            const style = TOAST_STYLES[type] || TOAST_STYLES.blue;
+
+            toastMsg.innerText = message;
+            toastInd.className = `w-2 h-2 rounded-full ${style.dot}`;
+            toast.className = `fixed bottom-16 left-1/2 -translate-x-1/2 px-5 py-2.5 bg-white border rounded-full shadow-2xl text-[16px] font-bold opacity-100 transition-all duration-300 z-50 flex items-center gap-2 ${style.border}`;
+
+            if (toastTimeout) clearTimeout(toastTimeout);
+
+            if (type === "emerald" || type === "rose") {
+                toastTimeout = setTimeout(() => {
+                    toast.classList.remove("opacity-100");
+                    toast.classList.add("opacity-0", "pointer-events-none");
+                }, 3000);
+            }
+        }
+
+        // 상태 점/텍스트를 STATUS_STYLES 기준으로 갱신
+        function applyStatus(mode) {
+            const style = STATUS_STYLES[mode];
+            document.getElementById("status-dot").className = `w-1.5 h-1.5 rounded-full shrink-0 ${style.dot}`;
+            document.getElementById("status-text").innerText = style.text;
+        }
+
+        // 종목 1건의 현재가/NAV/괴리율/시가총액 수신
+        async function fetchPriceData(itemObj) {
+            const priceRes = await fetch(`${MY_SERVER}/api/kis-data/${itemObj.ticker}`);
+            if (!priceRes.ok) throw new Error("서버 연동 오류");
+            const data = await priceRes.json();
+            if (!data || !data.output) return false;
+
+            const out = data.output;
+            itemObj.price = parseInt(out.stck_prpr);
+            itemObj.volume = parseInt(out.acml_vol);
+
+            const changeAmt = parseInt(out.prdy_vrss);
+            const changeRate = parseFloat(out.prdy_ctrt);
+            const isFall = out.prdy_vrss_sign === "4" || out.prdy_vrss_sign === "5";
+            itemObj.changeAmt = isFall ? -Math.abs(changeAmt) : Math.abs(changeAmt);
+            itemObj.changeRate = isFall ? -Math.abs(changeRate) : Math.abs(changeRate);
+            itemObj.prevClose = itemObj.price - itemObj.changeAmt;
+
+            // 시가총액: hts_avls(억원)를 우선 사용하고, 값이 없거나 0이면
+            // 상장(발행)좌수 x 현재가로 환산 시도. 그래도 없으면 null 처리 후 원본 응답을 콘솔에 남김
+            const rawMCap = parseInt(out.hts_avls);
+            if (!isNaN(rawMCap) && rawMCap > 0) {
+                itemObj.marketCap = rawMCap;
+            } else {
+                const shares = parseInt(out.lstn_stcn);
+                if (!isNaN(shares) && shares > 0 && itemObj.price) {
+                    itemObj.marketCap = Math.round((shares * itemObj.price) / 100000000);
+                } else {
+                    itemObj.marketCap = null;
+                    console.warn(`[${itemObj.ticker}] 시가총액 필드를 찾을 수 없습니다. 서버 응답 output:`, out);
+                }
+            }
+
+            if (itemObj.isGold) {
+                itemObj.nav = null;
+                itemObj.discrepancy = null;
+            } else {
+                itemObj.nav = out.nav ? parseFloat(out.nav) : null;
+                if (out.dprt) {
+                    itemObj.discrepancy = parseFloat(out.dprt);
+                } else if (itemObj.price && itemObj.nav > 0) {
+                    itemObj.discrepancy = ((itemObj.price - itemObj.nav) / itemObj.nav) * 100;
+                } else {
+                    itemObj.discrepancy = null;
+                }
+            }
+            return true;
+        }
+
+        // 종목 1건의 분배금(주당) / 지급(기준)일 수신 - 분배율(divi_rate)은 사용하지 않음
+        async function fetchDividendData(itemObj) {
+            try {
+                const res = await fetch(`${MY_SERVER}/api/kis-dividend/${itemObj.ticker}`);
+                if (!res.ok) throw new Error("배당 서버 오류");
+                const divData = await res.json();
+
+                if (divData.success && divData.data) {
+                    const dAmt = parseInt(divData.data.per_sto_divi_amt);
+                    itemObj.divAmtRaw = !isNaN(dAmt) ? dAmt : 0;
+                    itemObj.divAmt = !isNaN(dAmt) ? formatNumber(dAmt) + "원" : "0원";
+
+                    const rDate = divData.data.record_date;
+                    itemObj.recordDate = (rDate && rDate.length === 8)
+                        ? `${rDate.slice(0, 4)}-${rDate.slice(4, 6)}-${rDate.slice(6, 8)}`
+                        : "기록없음";
+                } else {
+                    itemObj.divAmtRaw = 0;
+                    itemObj.divAmt = "0원";
+                    itemObj.recordDate = "-";
+                }
+            } catch (e) {
+                console.warn(`[${itemObj.ticker}] 분배금 정보 로드 오류:`, e);
+                itemObj.divAmtRaw = 0;
+                itemObj.divAmt = "오류";
+                itemObj.recordDate = "-";
+            }
+        }
+
+        async function updateSingleItem(itemObj) {
+            let priceSuccess = false;
+            try {
+                priceSuccess = await fetchPriceData(itemObj);
+            } catch (error) {
+                console.error(`[${itemObj.ticker}] 현재가 업데이트 실패:`, error);
+                priceSuccess = false;
+            }
+
+            // 서버 동시 부하를 줄이기 위해 분배금 요청은 현재가 요청이 끝난 뒤 순차 실행
+            if (!itemObj.isGold) {
+                await fetchDividendData(itemObj);
+            }
+
+            return priceSuccess;
+        }
+
+        // 글로벌 지수/환율/금 1건 조회 (야후 파이낸스 경유)
+        async function fetchGlobalIndex(itemObj) {
+            try {
+                const res = await fetch(`${MY_SERVER}/api/global/${itemObj.key}`);
+                if (!res.ok) throw new Error("글로벌 지수 서버 오류");
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || "데이터 없음");
+
+                itemObj.price = data.price;
+                itemObj.previousClose = data.previousClose;
+                itemObj.currency = data.currency;
+                return true;
+            } catch (e) {
+                console.warn(`[${itemObj.key}] 글로벌 지수 로드 오류:`, e);
+                return false;
+            }
+        }
+
+        // 금현물(KRX) 가격을 국제금(USD/oz) x 환율로 환산해 괴리율 계산
+        // 1트로이온스 = 31.1034768g 기준
+        function updateGoldDiscrepancy() {
+            const goldItem = ETF_DATABASE.find(item => item.isGold);
+            const goldGlobal = GLOBAL_INDEX_LIST.find(item => item.key === "gold");
+            const usdkrwGlobal = GLOBAL_INDEX_LIST.find(item => item.key === "usdkrw");
+            if (!goldItem || !goldGlobal || !usdkrwGlobal) return;
+            if (!goldItem.price || !goldGlobal.price || !usdkrwGlobal.price) return;
+
+            const GRAMS_PER_OUNCE = 31.1034768;
+            const intlPriceKRWPerGram = (goldGlobal.price / GRAMS_PER_OUNCE) * usdkrwGlobal.price;
+            goldItem.nav = intlPriceKRWPerGram;
+            goldItem.discrepancy = ((goldItem.price - intlPriceKRWPerGram) / intlPriceKRWPerGram) * 100;
+        }
+
+        async function executeFullUpdate() {
+            if (isRefreshing) return;
+            isRefreshing = true;
+
+            const refreshBtn = document.getElementById("refresh-btn");
+            const refreshIcon = document.getElementById("refresh-icon");
+
+            refreshBtn.classList.add("cooldown-btn");
+            refreshIcon.classList.add("animate-spin");
+            applyStatus("loading");
+            showProgressToast("KIS 중계 서버에서 실시간 데이터를 받아옵니다...", "blue");
+
+            try {
+                const results = await Promise.all(ETF_DATABASE.map(updateSingleItem));
+                await Promise.all(GLOBAL_INDEX_LIST.map(fetchGlobalIndex));
+                updateGoldDiscrepancy();
+                const successCount = results.filter(Boolean).length;
+                const now = new Date().toLocaleTimeString();
+
+                if (successCount === ETF_DATABASE.length) {
+                    document.getElementById("update-timestamp").innerText = now;
+                    applyStatus("success");
+                    showProgressToast("데이터 동기화를 완벽하게 성공했습니다.", "emerald");
+                } else if (successCount > 0) {
+                    document.getElementById("update-timestamp").innerText = now;
+                    applyStatus("partial");
+                    showProgressToast(`일부 자산(${successCount}개)만 업데이트 되었습니다.`, "emerald");
+                } else {
+                    document.getElementById("update-timestamp").innerText = now;
+                    applyStatus("error");
+                    showProgressToast("KIS 연동 프록시 서버 연결에 실패했습니다.", "rose");
+                }
+            } catch (e) {
+                console.error("동기화 중 오류 발생", e);
+            }
+
+            renderApp();
+
+            setTimeout(() => {
+                refreshIcon.classList.remove("animate-spin");
+                refreshBtn.classList.remove("cooldown-btn");
+                isRefreshing = false;
+            }, 1000);
+        }
+
+        // 일중 실시간 차트 이미지 (네이버 금융 스니펫 차트 활용)
+        function generateHonestTrendSvg(prevClose, price, changeRate, ticker) {
+            if (price === null || prevClose === null || isNaN(changeRate)) {
+                return `
+                    <div class="w-full bg-slate-100 rounded-2xl h-24 flex items-center justify-center border border-slate-300 mt-1.5">
+                        <span class="text-[16px] text-slate-500 font-bold">데이터 대기중</span>
+                    </div>
+                `;
+            }
+
+            const isUp = changeRate >= 0;
+            const strokeColor = isUp ? "#f43f5e" : "#3b82f6";
+            // 금현물(M04020000)은 네이버가 차트를 제공하지 않는 특수 상품코드라
+            // 금 가격을 거의 1:1로 추종하는 ACE KRX금현물 ETF(411060) 차트로 대체
+            const chartTicker = ticker === "M04020000" ? "411060" : ticker;
+            const chartUrl = `https://ssl.pstatic.net/imgfinance/chart/item/area/day/${chartTicker}.png?sidcode=${Date.now()}`;
+            const trendFactor = Math.max(-25, Math.min(25, changeRate * 8));
+            const endY = 50 - trendFactor;
+
+            return `
+                <div class="relative w-full bg-slate-100 rounded-2xl border border-slate-300 h-24 flex flex-col justify-center items-center mt-1.5 shadow-inner overflow-hidden">
+                    <img src="${chartUrl}"
+                         alt="실시간 차트"
+                         class="absolute inset-0 w-full h-full object-cover opacity-90 transition-opacity duration-300"
+                         onload="this.parentElement.querySelector('.fallback-svg').style.display='none';"
+                         onerror="this.style.display='none'; this.parentElement.querySelector('.fallback-svg').style.display='block';" />
+
+                    <svg class="fallback-svg absolute inset-0 w-full h-full p-3" style="display:none;" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        <line x1="0" y1="50" x2="100" y2="50" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="2,2" />
+                        <path d="M 0 50 Q 50 ${50 - trendFactor / 2}, 100 ${endY}" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" />
+                        <circle cx="100" cy="${endY}" r="4" fill="${strokeColor}" />
+                    </svg>
+
+                    <div class="absolute bottom-2 w-full px-2 flex justify-between text-[14px] text-slate-600 font-bold z-10 pointer-events-none">
+                        <span class="bg-white/90 px-1.5 py-0.5 rounded shadow-sm">기준: ${formatNumber(prevClose)}원</span>
+                        <span class="bg-white/90 px-1.5 py-0.5 rounded shadow-sm ${isUp ? 'text-rose-600' : 'text-blue-600'}">${isUp ? '+' : ''}${changeRate.toFixed(2)}%</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 종목 데이터를 화면 표시용 값으로 가공 (요약/상세 화면 공용)
+        function buildDisplayValues(itemObj) {
+            const hasValue = itemObj.price !== null;
+            const view = {
+                hasValue,
+                changeColorClass: "text-slate-600",
+                badgeColorClass: "text-slate-600 bg-white border-slate-200",
+                displayPrice: hasValue ? "" : "로딩 중...",
+                displayChange: "-",
+                displayVolume: "-",
+                displayMCap: "-",
+                displayDiscrepancy: "-",
+                displayDivAmt: itemObj.divAmt || "대기중",
+                displayRecordDate: itemObj.recordDate || "-"
+            };
+            if (!hasValue) return view;
+
+            const isPositive = itemObj.changeAmt >= 0;
+            const changeSign = isPositive ? "▲" : "▼";
+            const changePctSign = isPositive ? "+" : "";
+
+            view.changeColorClass = isPositive ? "text-rose-600 font-bold" : "text-blue-600 font-bold";
+            view.displayPrice = formatNumber(itemObj.price) + "원";
+            view.displayChange = `${changeSign}${formatNumber(Math.abs(itemObj.changeAmt))} (${changePctSign}${itemObj.changeRate.toFixed(2)}%)`;
+
+            if (itemObj.isGold) {
+                view.displayVolume = itemObj.volume ? formatNumber(itemObj.volume) + "g" : "집계 불가";
+                view.displayMCap = "한국거래소(KRX)";
+            } else {
+                view.displayVolume = itemObj.volume ? formatNumber(itemObj.volume) + "주" : "0주";
+                view.displayMCap = itemObj.marketCap ? formatNumber(itemObj.marketCap) + "억 원" : "정보 없음";
+            }
+
+            // 괴리율: ETF는 NAV 대비, 금현물은 국제금 환산가(KRW/g) 대비로 동일한 방식으로 계산됨
+            if (itemObj.discrepancy !== null && itemObj.discrepancy !== undefined) {
+                const discVal = itemObj.discrepancy;
+                view.displayDiscrepancy = `${discVal > 0 ? "+" : ""}${discVal.toFixed(2)}%`;
+                view.badgeColorClass = discVal > 0
+                    ? 'text-rose-600 bg-rose-50 border-rose-200'
+                    : (discVal < 0 ? 'text-blue-600 bg-blue-50 border-blue-200' : 'text-slate-500 bg-white border-slate-300');
+            } else {
+                view.displayDiscrepancy = "수집 대기";
+                view.badgeColorClass = "text-slate-500 bg-white border-slate-300";
+            }
+            return view;
+        }
+
+        function renderSummaryRow(itemObj, index, view) {
+            const row = document.createElement("div");
+            row.onclick = () => slideTo(index + 2);
+            row.className = "bg-white border border-slate-300 active-scale rounded-2xl p-2.5 flex justify-between items-center cursor-pointer transition-all duration-200 hover:border-slate-400 hover:bg-slate-50";
+            row.innerHTML = `
+                <div class="flex-1 min-w-0 pr-2">
+                    <h3 class="text-[19px] font-extrabold text-slate-800 truncate leading-tight">${itemObj.name}</h3>
+                </div>
+                <div class="text-right shrink-0 pr-3 min-w-[115px]">
+                    <div class="text-[19px] font-black text-slate-900">${view.displayPrice}</div>
+                    <div class="text-[16px] ${view.changeColorClass} mt-1">${view.displayChange}</div>
+                </div>
+                <div class="shrink-0 text-right min-w-[82px]">
+                    <span class="text-[16px] font-bold px-2.5 py-2 rounded-md border inline-block ${view.badgeColorClass}">
+                        ${view.displayDiscrepancy}
+                    </span>
+                </div>
+            `;
+            return row;
+        }
+
+        function renderDetailCard(itemObj, view) {
+            const navLabel = itemObj.isGold ? "국제금 환산가(원/g)" : "실시간 NAV";
+            const navBlock = `
+                <div class="grid grid-cols-2 gap-3 text-[17px]">
+                    <div class="flex flex-col justify-center items-start bg-slate-50 px-4 py-2 rounded-xl border border-slate-300">
+                        <span class="text-slate-600 text-[16px] font-bold mb-1">${navLabel}</span>
+                        <span class="font-extrabold text-slate-800">${itemObj.nav ? formatNumber(Math.round(itemObj.nav)) + "원" : "수집 지연"}</span>
+                    </div>
+                    <div class="flex flex-col justify-center items-end bg-slate-50 px-4 py-2 rounded-xl border border-slate-300 text-right">
+                        <span class="text-slate-600 text-[16px] font-bold mb-1">실시간 괴리율</span>
+                        <span class="px-2.5 py-1.5 rounded text-[17px] font-black border ${view.badgeColorClass} shadow-sm">
+                            ${view.displayDiscrepancy}
+                        </span>
+                    </div>
+                </div>
+            `;
+
+            // 분배금/지급일은 카드 맨 아래에 배치 (금 현물은 미출력)
+            const divBlock = itemObj.isGold ? '' : `
+                <div class="grid grid-cols-2 gap-3 text-[17px]">
+                    <div class="flex flex-col justify-center items-start bg-slate-50 px-4 py-2 rounded-xl border border-slate-300">
+                        <span class="text-slate-600 text-[16px] font-bold mb-1">주당 분배금</span>
+                        <span class="font-extrabold text-slate-800">${view.displayDivAmt}</span>
+                    </div>
+                    <div class="flex flex-col justify-center items-end bg-slate-50 px-4 py-2 rounded-xl border border-slate-300 text-right">
+                        <span class="text-slate-600 text-[16px] font-bold mb-1">분배금 지급일</span>
+                        <span class="font-extrabold text-slate-800">${view.displayRecordDate}</span>
+                    </div>
+                </div>
+            `;
+
+            const slideCard = document.createElement("div");
+            slideCard.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5";
+            slideCard.innerHTML = `
+                <div class="bg-white border border-slate-300 rounded-[1.5rem] p-3.5 flex-1 flex flex-col justify-start shadow-2xl relative overflow-y-auto no-scrollbar">
+                    <div class="space-y-1.5 relative z-10">
+                        <h3 class="text-[22px] font-black text-slate-900 leading-snug break-keep tracking-tight">${itemObj.name}</h3>
+
+                        <div class="grid grid-cols-2 gap-2 bg-slate-100 border border-slate-200 rounded-2xl p-2.5 shadow-inner">
+                            <div>
+                                <span class="text-[16px] text-slate-600 block font-bold">현재가</span>
+                                <div class="text-[26px] font-black text-slate-900 mt-1 tracking-tight">${view.displayPrice}</div>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[16px] text-slate-600 block font-bold">등락가 및 등락율</span>
+                                <div class="text-[19px] ${view.changeColorClass} mt-1 tracking-tight">${view.displayChange}</div>
+                            </div>
+                        </div>
+
+                        ${navBlock}
+
+                        <div class="space-y-1">
+                            ${generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker)}
+                        </div>
+
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 space-y-1 text-[17px] text-slate-500">
+                            <div class="flex justify-between items-center">
+                                <span class="text-slate-600 font-bold text-[17px]">전일 종가</span>
+                                <span class="text-slate-800 font-mono font-bold">${formatNumber(itemObj.prevClose)}원</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-slate-600 font-bold text-[17px]">당일 거래량</span>
+                                <span class="text-slate-800 font-mono font-bold">${view.displayVolume}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-slate-600 font-bold text-[17px]">${itemObj.isGold ? '거래소' : '시가총액'}</span>
+                                <span class="text-slate-800 font-bold">${view.displayMCap}</span>
+                            </div>
+                        </div>
+
+                        ${divBlock}
+                    </div>
+                </div>
+            `;
+            return slideCard;
+        }
+
+        // 보유 주식수 입력 시 호출 - 값 저장 후 합계 재계산
+        function handleShareInput(inputEl) {
+            userShares[inputEl.dataset.ticker] = inputEl.value;
+            updateCalculator();
+        }
+
+        // 계산기 탭: 종목별 (분배금 × 보유주식수) 및 (현재가 × 보유주식수) 합계, 분배율 재계산
+        function updateCalculator() {
+            let totalValue = 0;
+            let totalDividend = 0;
+
+            ETF_DATABASE.filter(item => !item.isGold).forEach(itemObj => {
+                const shares = parseFloat(userShares[itemObj.ticker]) || 0;
+                const perShareDividend = itemObj.divAmtRaw || 0;
+                const dividendTotal = shares * perShareDividend;
+                const valueTotal = shares * (itemObj.price || 0);
+
+                totalDividend += dividendTotal;
+                totalValue += valueTotal;
+
+                const resultEl = document.querySelector(`[data-ticker-result="${itemObj.ticker}"]`);
+                if (resultEl) resultEl.innerText = formatNumber(Math.round(dividendTotal)) + "원";
+            });
+
+            const totalValueEl = document.getElementById("calc-total-value");
+            const totalDivEl = document.getElementById("calc-total-dividend");
+            const rateEl = document.getElementById("calc-total-rate");
+            if (!totalValueEl || !totalDivEl || !rateEl) return;
+
+            totalValueEl.innerText = formatNumber(Math.round(totalValue)) + "원";
+            totalDivEl.innerText = formatNumber(Math.round(totalDividend)) + "원";
+            rateEl.innerText = totalValue > 0 ? ((totalDividend / totalValue) * 100).toFixed(2) + "%" : "0.00%";
+        }
+
+        // 계산기 슬라이드: 종목별 이번 분배금(주당) 표시 + 보유주식수 직접 입력 + 합계/비율 계산
+        function renderCalculatorSlide() {
+            const rows = ETF_DATABASE.filter(item => !item.isGold).map(itemObj => `
+                <div class="bg-slate-50 border border-slate-300 rounded-xl p-3 space-y-2">
+                    <div class="flex justify-between items-start gap-2">
+                        <h4 class="text-[16px] font-bold text-slate-800 truncate">${itemObj.name}</h4>
+                        <div class="text-right shrink-0">
+                            <span class="text-[14px] text-slate-500 block font-bold">이번 분배금(주당)</span>
+                            <span class="text-[17px] font-black text-slate-900">${itemObj.divAmt || "대기중"}</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between gap-3 bg-white rounded-lg px-3 py-2">
+                        <label class="text-[15px] text-slate-600 font-bold shrink-0">보유 주식수</label>
+                        <input type="number" inputmode="numeric" min="0" placeholder="0"
+                               class="w-24 text-right bg-white text-slate-900 text-[17px] font-bold rounded-lg px-3 py-2 border border-slate-300 focus:outline-none focus:border-blue-500"
+                               value="${userShares[itemObj.ticker] || ''}"
+                               data-ticker="${itemObj.ticker}" oninput="handleShareInput(this)" />
+                        <span class="text-[15px] text-slate-500 shrink-0">주</span>
+                    </div>
+                    <div class="flex justify-between items-center pt-1 border-t border-slate-200">
+                        <span class="text-[15px] text-slate-500 font-bold">예상 수령액</span>
+                        <span class="text-[18px] font-black text-emerald-600" data-ticker-result="${itemObj.ticker}">0원</span>
+                    </div>
+                </div>
+            `).join("");
+
+            const slide = document.createElement("div");
+            slide.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5";
+            slide.innerHTML = `
+                <div class="bg-white border border-slate-300 rounded-[1.5rem] p-3.5 flex-1 flex flex-col shadow-2xl relative overflow-y-auto no-scrollbar">
+                    <div class="space-y-2 relative z-10">
+                        <h3 class="text-[21px] font-black text-slate-900 leading-snug">내 분배금 계산기</h3>
+
+                        <div class="space-y-2">
+                            ${rows}
+                        </div>
+
+                        <div class="bg-slate-100 border border-slate-300 rounded-2xl p-3 space-y-2">
+                            <div class="flex justify-between items-center">
+                                <span class="text-[15px] text-slate-600 font-bold">보유 평가금액 합(현재가 기준)</span>
+                                <span id="calc-total-value" class="text-[17px] font-black text-slate-900">0원</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-[15px] text-slate-600 font-bold">내 분배금 합</span>
+                                <span id="calc-total-dividend" class="text-[17px] font-black text-emerald-600">0원</span>
+                            </div>
+                            <div class="flex justify-between items-center pt-2 border-t border-slate-200">
+                                <span class="text-[16px] text-slate-900 font-black">분배율</span>
+                                <span id="calc-total-rate" class="text-[21px] font-black text-violet-600">0.00%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            return slide;
+        }
+
+        // 글로벌 지수/환율/금 슬라이드
+        function renderGlobalIndexSlide() {
+            const rows = GLOBAL_INDEX_LIST.map(itemObj => {
+                const hasValue = itemObj.price !== null && itemObj.price !== undefined;
+                let displayPrice = "로딩 중...";
+                let displayChange = "-";
+                let displayPrevClose = "-";
+                let changeColorClass = "text-slate-500";
+
+                if (hasValue) {
+                    const decimals = itemObj.key === "usdkrw" ? 2 : (itemObj.key === "us30y" ? 3 : 2);
+                    displayPrice = itemObj.price.toLocaleString("ko-KR", { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
+                    if (itemObj.previousClose) {
+                        const diff = itemObj.price - itemObj.previousClose;
+                        const diffRate = (diff / itemObj.previousClose) * 100;
+                        const isPositive = diff >= 0;
+                        changeColorClass = isPositive ? "text-rose-600 font-bold" : "text-blue-600 font-bold";
+                        displayChange = `${isPositive ? "▲" : "▼"}${Math.abs(diff).toFixed(decimals)} (${isPositive ? "+" : ""}${diffRate.toFixed(2)}%)`;
+                        displayPrevClose = itemObj.previousClose.toLocaleString("ko-KR", { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
+                    }
+                }
+
+                return `
+                    <div class="bg-white border border-slate-300 rounded-2xl p-2.5 flex justify-between items-center">
+                        <span class="text-[19px] font-extrabold text-slate-800">${itemObj.name}</span>
+                        <div class="text-right">
+                            <div class="text-[19px] font-black text-slate-900">${displayPrice}</div>
+                            <div class="text-[16px] ${changeColorClass} mt-1">${displayChange}</div>
+                            <div class="text-[14px] text-slate-900">전일 종가 ${displayPrevClose}</div>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+
+            const slide = document.createElement("div");
+            slide.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5 space-y-0.5";
+            slide.innerHTML = rows;
+            return slide;
+        }
+
+        // 렌더링 함수: 슬라이더 뷰 생성
+        function renderApp() {
+            const summaryContainer = document.getElementById("summary-list-container");
+            const summarySlide = document.getElementById("summary-slide");
+            const slider = document.getElementById("main-slider");
+
+            summaryContainer.innerHTML = "";
+            slider.innerHTML = ""; // summarySlide는 JS 참조로 이미 잡아뒀으므로 재부착 가능
+
+            slider.appendChild(renderGlobalIndexSlide()); // 1번째: 글로벌 지수
+            slider.appendChild(summarySlide);              // 2번째: 요약(금+ETF 현재가) 리스트
+
+            ETF_DATABASE.forEach((itemObj, index) => {
+                const view = buildDisplayValues(itemObj);
+                summaryContainer.appendChild(renderSummaryRow(itemObj, index, view));
+                slider.appendChild(renderDetailCard(itemObj, view));
+            });
+
+            slider.appendChild(renderCalculatorSlide());
+            updateCalculator();
+
+            slider.removeEventListener("scroll", handleSliderScroll);
+            slider.addEventListener("scroll", handleSliderScroll);
+            updateDots();
+        }
+
+        // 서비스워커 등록 - 크롬이 "설치 가능한 앱"으로 인식해서 전체화면(standalone)으로 열리게 하려면 필요
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", () => {
+                navigator.serviceWorker.register("sw.js").catch(err => {
+                    console.warn("서비스워커 등록 실패:", err);
+                });
+            });
+        }
+
+        // 초기 시작
+        window.onload = function() {
+            renderApp();
+            setTimeout(() => { executeFullUpdate(); }, 300);
+        };
+    </script>
+</body>
+</html>
