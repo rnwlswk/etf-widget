@@ -50,7 +50,7 @@
                         <span class="text-slate-500">·</span>
                         <span id="update-timestamp">-</span>
                     </div>
-                    <div class="flex-1 overflow-y-auto no-scrollbar space-y-2 pb-20" id="summary-list-container">
+                    <div class="flex-1 overflow-y-auto no-scrollbar space-y-1 pb-20" id="summary-list-container">
                         <!-- 자산 목록이 여기에 동적으로 추가됩니다 -->
                     </div>
                 </div>
@@ -449,7 +449,7 @@
         function renderSummaryRow(itemObj, index, view) {
             const row = document.createElement("div");
             row.onclick = () => slideTo(index + 2);
-            row.className = "bg-white border border-slate-300 active-scale rounded-2xl p-3.5 flex justify-between items-center cursor-pointer transition-all duration-200 hover:border-slate-400 hover:bg-slate-50";
+            row.className = "bg-white border border-slate-300 active-scale rounded-2xl p-2.5 flex justify-between items-center cursor-pointer transition-all duration-200 hover:border-slate-400 hover:bg-slate-50";
             row.innerHTML = `
                 <div class="flex-1 min-w-0 pr-2">
                     <h3 class="text-[19px] font-extrabold text-slate-800 truncate leading-tight">${itemObj.name}</h3>
@@ -658,7 +658,7 @@
                 }
 
                 return `
-                    <div class="bg-white border border-slate-300 rounded-2xl p-3.5 flex justify-between items-center">
+                    <div class="bg-white border border-slate-300 rounded-2xl p-2.5 flex justify-between items-center">
                         <span class="text-[19px] font-extrabold text-slate-800">${itemObj.name}</span>
                         <div class="text-right">
                             <div class="text-[19px] font-black text-slate-900">${displayPrice}</div>
@@ -670,7 +670,7 @@
             }).join("");
 
             const slide = document.createElement("div");
-            slide.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5 space-y-2";
+            slide.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5 space-y-1";
             slide.innerHTML = rows;
             return slide;
         }
