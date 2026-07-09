@@ -10,7 +10,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Market Live">
-    <meta name="theme-color" content="#030712">
+    <meta name="theme-color" content="#f8fafc">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3135/3135715.png">
 
     <link rel="manifest" href="manifest.json">
@@ -18,7 +18,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap');
-        body { font-family: 'Pretendard', sans-serif; background-color: #030712; -webkit-tap-highlight-color: transparent; overflow: hidden; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; color: #0f172a; -webkit-tap-highlight-color: transparent; overflow: hidden; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
         .snap-x { scroll-snap-type: x mandatory; scroll-behavior: smooth; }
         .snap-center { scroll-snap-align: center; scroll-snap-stop: always; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -27,10 +27,10 @@
         .cooldown-btn { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
     </style>
 </head>
-<body class="text-slate-100 min-h-screen flex flex-col justify-between items-center p-4 select-none">
+<body class="text-slate-900 min-h-screen flex flex-col justify-between items-center p-4 select-none">
 
     <!-- 플로팅 새로고침 버튼 (상단 헤더 제거 후 화면 우하단에 고정 배치) -->
-    <button id="refresh-btn" onclick="executeFullUpdate()" class="fixed bottom-5 right-5 z-40 active-scale w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-500 transition-all text-white shadow-xl shadow-blue-900/40 flex items-center justify-center">
+    <button id="refresh-btn" onclick="executeFullUpdate()" class="fixed bottom-5 right-5 z-40 active-scale w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-700 transition-all text-white shadow-xl shadow-blue-900/40 flex items-center justify-center">
         <svg id="refresh-icon" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17" />
         </svg>
@@ -44,8 +44,8 @@
 
                 <!-- 요약 리스트 슬라이드 (렌더링 시 두 번째 위치로 재배치됨) -->
                 <div id="summary-slide" class="w-full h-full shrink-0 snap-center flex flex-col justify-start space-y-2 p-0.5">
-                    <div class="px-2 flex items-center gap-1.5 text-[14px] text-slate-300 font-mono shrink-0">
-                        <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-500 shrink-0"></span>
+                    <div class="px-2 flex items-center gap-1.5 text-[14px] text-slate-600 font-mono shrink-0">
+                        <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
                         <span id="status-text">연동 대기</span>
                         <span class="text-slate-500">·</span>
                         <span id="update-timestamp">-</span>
@@ -64,7 +64,7 @@
         </footer>
 
         <!-- 알림 토스트 메시지 -->
-        <div id="toast" class="fixed bottom-16 left-1/2 -translate-x-1/2 px-5 py-2.5 bg-slate-900 border rounded-full shadow-2xl text-[16px] font-bold opacity-0 pointer-events-none transition-all duration-300 z-50 flex items-center gap-2">
+        <div id="toast" class="fixed bottom-16 left-1/2 -translate-x-1/2 px-5 py-2.5 bg-white border rounded-full shadow-2xl text-[16px] font-bold opacity-0 pointer-events-none transition-all duration-300 z-50 flex items-center gap-2">
             <span id="toast-indicator" class="w-2 h-2 rounded-full"></span><span id="toast-msg">-</span>
         </div>
     </div>
@@ -104,10 +104,10 @@
 
         // 상태 점(dot) + 텍스트 스타일 프리셋
         const STATUS_STYLES = {
-            loading:  { dot: "bg-blue-400 animate-ping", text: "단일 통신 요청 중" },
-            success:  { dot: "bg-emerald-400",           text: "LIVE (실시간)" },
-            partial:  { dot: "bg-emerald-400",           text: "LIVE (실시간)" },
-            error:    { dot: "bg-rose-400",              text: "수신 오류" }
+            loading:  { dot: "bg-blue-500 animate-ping", text: "단일 통신 요청 중" },
+            success:  { dot: "bg-emerald-500",           text: "LIVE (실시간)" },
+            partial:  { dot: "bg-emerald-500",           text: "LIVE (실시간)" },
+            error:    { dot: "bg-rose-500",              text: "수신 오류" }
         };
 
         let currentSlide = 0;
@@ -142,11 +142,11 @@
             for (let i = 0; i <= lastIndex; i++) {
                 const dot = document.createElement("button");
                 dot.onclick = () => slideTo(i);
-                let activeColor = "bg-emerald-500";
-                if (i === 0) activeColor = "bg-cyan-500";
-                else if (i === summarySlide) activeColor = "bg-blue-500";
-                else if (i === lastIndex) activeColor = "bg-violet-500";
-                dot.className = `h-1.5 rounded-full transition-all duration-300 ${currentSlide === i ? `w-4 ${activeColor}` : 'w-1.5 bg-slate-700'}`;
+                let activeColor = "bg-emerald-600";
+                if (i === 0) activeColor = "bg-cyan-600";
+                else if (i === summarySlide) activeColor = "bg-blue-600";
+                else if (i === lastIndex) activeColor = "bg-violet-600";
+                dot.className = `h-1.5 rounded-full transition-all duration-300 ${currentSlide === i ? `w-4 ${activeColor}` : 'w-1.5 bg-slate-200'}`;
                 dotsContainer.appendChild(dot);
             }
         }
@@ -158,15 +158,15 @@
             const toastInd = document.getElementById("toast-indicator");
 
             const TOAST_STYLES = {
-                blue:    { dot: "bg-blue-400 animate-pulse", border: "border-blue-900/40 text-blue-400" },
-                emerald: { dot: "bg-emerald-400",            border: "border-emerald-900/40 text-emerald-400" },
-                rose:    { dot: "bg-rose-400",               border: "border-rose-900/40 text-rose-400" }
+                blue:    { dot: "bg-blue-500 animate-pulse", border: "border-blue-200 text-blue-600" },
+                emerald: { dot: "bg-emerald-500",            border: "border-emerald-200 text-emerald-600" },
+                rose:    { dot: "bg-rose-500",               border: "border-rose-200 text-rose-600" }
             };
             const style = TOAST_STYLES[type] || TOAST_STYLES.blue;
 
             toastMsg.innerText = message;
             toastInd.className = `w-2 h-2 rounded-full ${style.dot}`;
-            toast.className = `fixed bottom-16 left-1/2 -translate-x-1/2 px-5 py-2.5 bg-slate-900 border rounded-full shadow-2xl text-[16px] font-bold opacity-100 transition-all duration-300 z-50 flex items-center gap-2 ${style.border}`;
+            toast.className = `fixed bottom-16 left-1/2 -translate-x-1/2 px-5 py-2.5 bg-white border rounded-full shadow-2xl text-[16px] font-bold opacity-100 transition-all duration-300 z-50 flex items-center gap-2 ${style.border}`;
 
             if (toastTimeout) clearTimeout(toastTimeout);
 
@@ -362,8 +362,8 @@
         function generateHonestTrendSvg(prevClose, price, changeRate, ticker) {
             if (price === null || prevClose === null || isNaN(changeRate)) {
                 return `
-                    <div class="w-full bg-slate-950/40 rounded-2xl h-24 flex items-center justify-center border border-slate-700 mt-1.5">
-                        <span class="text-[16px] text-slate-400 font-bold">데이터 대기중</span>
+                    <div class="w-full bg-slate-100 rounded-2xl h-24 flex items-center justify-center border border-slate-300 mt-1.5">
+                        <span class="text-[16px] text-slate-500 font-bold">데이터 대기중</span>
                     </div>
                 `;
             }
@@ -378,23 +378,22 @@
             const endY = 50 - trendFactor;
 
             return `
-                <div class="relative w-full bg-slate-950 rounded-2xl border border-slate-700 h-24 flex flex-col justify-center items-center mt-1.5 shadow-inner overflow-hidden">
+                <div class="relative w-full bg-slate-100 rounded-2xl border border-slate-300 h-24 flex flex-col justify-center items-center mt-1.5 shadow-inner overflow-hidden">
                     <img src="${chartUrl}"
                          alt="실시간 차트"
                          class="absolute inset-0 w-full h-full object-cover opacity-90 transition-opacity duration-300"
-                         style="filter: invert(1) hue-rotate(180deg) brightness(1.2) contrast(1.1);"
                          onload="this.parentElement.querySelector('.fallback-svg').style.display='none';"
                          onerror="this.style.display='none'; this.parentElement.querySelector('.fallback-svg').style.display='block';" />
 
                     <svg class="fallback-svg absolute inset-0 w-full h-full p-3" style="display:none;" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        <line x1="0" y1="50" x2="100" y2="50" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="2,2" />
+                        <line x1="0" y1="50" x2="100" y2="50" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="2,2" />
                         <path d="M 0 50 Q 50 ${50 - trendFactor / 2}, 100 ${endY}" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" />
                         <circle cx="100" cy="${endY}" r="4" fill="${strokeColor}" />
                     </svg>
 
-                    <div class="absolute bottom-2 w-full px-2 flex justify-between text-[14px] text-slate-400 font-bold z-10 pointer-events-none">
-                        <span class="bg-slate-900/80 px-1.5 py-0.5 rounded">기준: ${formatNumber(prevClose)}원</span>
-                        <span class="bg-slate-900/80 px-1.5 py-0.5 rounded text-white ${isUp ? 'text-rose-400' : 'text-blue-400'}">${isUp ? '+' : ''}${changeRate.toFixed(2)}%</span>
+                    <div class="absolute bottom-2 w-full px-2 flex justify-between text-[14px] text-slate-600 font-bold z-10 pointer-events-none">
+                        <span class="bg-white/90 px-1.5 py-0.5 rounded shadow-sm">기준: ${formatNumber(prevClose)}원</span>
+                        <span class="bg-white/90 px-1.5 py-0.5 rounded shadow-sm ${isUp ? 'text-rose-600' : 'text-blue-600'}">${isUp ? '+' : ''}${changeRate.toFixed(2)}%</span>
                     </div>
                 </div>
             `;
@@ -405,8 +404,8 @@
             const hasValue = itemObj.price !== null;
             const view = {
                 hasValue,
-                changeColorClass: "text-slate-300",
-                badgeColorClass: "text-slate-300 bg-slate-900 border-slate-800/60",
+                changeColorClass: "text-slate-600",
+                badgeColorClass: "text-slate-600 bg-white border-slate-200",
                 displayPrice: hasValue ? "" : "로딩 중...",
                 displayChange: "-",
                 displayVolume: "-",
@@ -421,7 +420,7 @@
             const changeSign = isPositive ? "▲" : "▼";
             const changePctSign = isPositive ? "+" : "";
 
-            view.changeColorClass = isPositive ? "text-rose-500 font-bold" : "text-blue-400 font-bold";
+            view.changeColorClass = isPositive ? "text-rose-600 font-bold" : "text-blue-600 font-bold";
             view.displayPrice = formatNumber(itemObj.price) + "원";
             view.displayChange = `${changeSign}${formatNumber(Math.abs(itemObj.changeAmt))} (${changePctSign}${itemObj.changeRate.toFixed(2)}%)`;
 
@@ -438,11 +437,11 @@
                 const discVal = itemObj.discrepancy;
                 view.displayDiscrepancy = `${discVal > 0 ? "+" : ""}${discVal.toFixed(2)}%`;
                 view.badgeColorClass = discVal > 0
-                    ? 'text-rose-400 bg-rose-950/50 border-rose-900/40'
-                    : (discVal < 0 ? 'text-blue-400 bg-blue-950/50 border-blue-900/40' : 'text-slate-400 bg-slate-900 border-slate-700');
+                    ? 'text-rose-600 bg-rose-50 border-rose-200'
+                    : (discVal < 0 ? 'text-blue-600 bg-blue-50 border-blue-200' : 'text-slate-500 bg-white border-slate-300');
             } else {
                 view.displayDiscrepancy = "수집 대기";
-                view.badgeColorClass = "text-slate-400 bg-slate-900 border-slate-700";
+                view.badgeColorClass = "text-slate-500 bg-white border-slate-300";
             }
             return view;
         }
@@ -450,13 +449,13 @@
         function renderSummaryRow(itemObj, index, view) {
             const row = document.createElement("div");
             row.onclick = () => slideTo(index + 2);
-            row.className = "bg-slate-900/70 border border-slate-700/60 active-scale rounded-2xl p-4 flex justify-between items-center cursor-pointer transition-all duration-200 hover:border-slate-600 hover:bg-slate-900";
+            row.className = "bg-white border border-slate-300 active-scale rounded-2xl p-4 flex justify-between items-center cursor-pointer transition-all duration-200 hover:border-slate-400 hover:bg-slate-50";
             row.innerHTML = `
                 <div class="flex-1 min-w-0 pr-2">
-                    <h3 class="text-[18px] font-extrabold text-slate-200 truncate leading-tight">${itemObj.name}</h3>
+                    <h3 class="text-[18px] font-extrabold text-slate-800 truncate leading-tight">${itemObj.name}</h3>
                 </div>
                 <div class="text-right shrink-0 pr-3 min-w-[115px]">
-                    <div class="text-[18px] font-black text-white">${view.displayPrice}</div>
+                    <div class="text-[18px] font-black text-slate-900">${view.displayPrice}</div>
                     <div class="text-[15px] ${view.changeColorClass} mt-1">${view.displayChange}</div>
                 </div>
                 <div class="shrink-0 text-right min-w-[82px]">
@@ -472,12 +471,12 @@
             const navLabel = itemObj.isGold ? "국제금 환산가(원/g)" : "실시간 NAV";
             const navBlock = `
                 <div class="grid grid-cols-2 gap-3 text-[16px]">
-                    <div class="flex flex-col justify-center items-start bg-slate-950/30 px-4 py-2.5 rounded-xl border border-slate-700/50">
-                        <span class="text-slate-300 text-[15px] font-bold mb-1">${navLabel}</span>
-                        <span class="font-extrabold text-slate-200">${itemObj.nav ? formatNumber(Math.round(itemObj.nav)) + "원" : "수집 지연"}</span>
+                    <div class="flex flex-col justify-center items-start bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-300">
+                        <span class="text-slate-600 text-[15px] font-bold mb-1">${navLabel}</span>
+                        <span class="font-extrabold text-slate-800">${itemObj.nav ? formatNumber(Math.round(itemObj.nav)) + "원" : "수집 지연"}</span>
                     </div>
-                    <div class="flex flex-col justify-center items-end bg-slate-950/30 px-4 py-2.5 rounded-xl border border-slate-700/50 text-right">
-                        <span class="text-slate-300 text-[15px] font-bold mb-1">실시간 괴리율</span>
+                    <div class="flex flex-col justify-center items-end bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-300 text-right">
+                        <span class="text-slate-600 text-[15px] font-bold mb-1">실시간 괴리율</span>
                         <span class="px-2.5 py-1.5 rounded text-[16px] font-black border ${view.badgeColorClass} shadow-sm">
                             ${view.displayDiscrepancy}
                         </span>
@@ -488,13 +487,13 @@
             // 분배금/지급일은 카드 맨 아래에 배치 (금 현물은 미출력)
             const divBlock = itemObj.isGold ? '' : `
                 <div class="grid grid-cols-2 gap-3 text-[16px]">
-                    <div class="flex flex-col justify-center items-start bg-slate-950/30 px-4 py-2.5 rounded-xl border border-slate-700/50">
-                        <span class="text-slate-300 text-[15px] font-bold mb-1">주당 분배금</span>
-                        <span class="font-extrabold text-slate-200">${view.displayDivAmt}</span>
+                    <div class="flex flex-col justify-center items-start bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-300">
+                        <span class="text-slate-600 text-[15px] font-bold mb-1">주당 분배금</span>
+                        <span class="font-extrabold text-slate-800">${view.displayDivAmt}</span>
                     </div>
-                    <div class="flex flex-col justify-center items-end bg-slate-950/30 px-4 py-2.5 rounded-xl border border-slate-700/50 text-right">
-                        <span class="text-slate-300 text-[15px] font-bold mb-1">분배금 지급일</span>
-                        <span class="font-extrabold text-slate-200">${view.displayRecordDate}</span>
+                    <div class="flex flex-col justify-center items-end bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-300 text-right">
+                        <span class="text-slate-600 text-[15px] font-bold mb-1">분배금 지급일</span>
+                        <span class="font-extrabold text-slate-800">${view.displayRecordDate}</span>
                     </div>
                 </div>
             `;
@@ -502,17 +501,17 @@
             const slideCard = document.createElement("div");
             slideCard.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5";
             slideCard.innerHTML = `
-                <div class="bg-slate-900/80 border border-slate-700 rounded-[1.5rem] p-3.5 flex-1 flex flex-col justify-center shadow-2xl relative overflow-y-auto no-scrollbar">
+                <div class="bg-white border border-slate-300 rounded-[1.5rem] p-3.5 flex-1 flex flex-col justify-center shadow-2xl relative overflow-y-auto no-scrollbar">
                     <div class="space-y-2 relative z-10">
-                        <h3 class="text-[21px] font-black text-white leading-snug break-keep tracking-tight">${itemObj.name}</h3>
+                        <h3 class="text-[21px] font-black text-slate-900 leading-snug break-keep tracking-tight">${itemObj.name}</h3>
 
-                        <div class="grid grid-cols-2 gap-2 bg-slate-950/60 border border-slate-800/80 rounded-2xl p-3 shadow-inner">
+                        <div class="grid grid-cols-2 gap-2 bg-slate-100 border border-slate-200 rounded-2xl p-3 shadow-inner">
                             <div>
-                                <span class="text-[15px] text-slate-300 block font-bold">현재가</span>
-                                <div class="text-[25px] font-black text-white mt-1 tracking-tight">${view.displayPrice}</div>
+                                <span class="text-[15px] text-slate-600 block font-bold">현재가</span>
+                                <div class="text-[25px] font-black text-slate-900 mt-1 tracking-tight">${view.displayPrice}</div>
                             </div>
                             <div class="text-right">
-                                <span class="text-[15px] text-slate-300 block font-bold">등락가 및 등락율</span>
+                                <span class="text-[15px] text-slate-600 block font-bold">등락가 및 등락율</span>
                                 <div class="text-[18px] ${view.changeColorClass} mt-1 tracking-tight">${view.displayChange}</div>
                             </div>
                         </div>
@@ -523,18 +522,18 @@
                             ${generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker)}
                         </div>
 
-                        <div class="bg-slate-950/20 border border-slate-700/40 rounded-2xl p-3 space-y-1.5 text-[16px] text-slate-400">
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-1.5 text-[16px] text-slate-500">
                             <div class="flex justify-between items-center">
-                                <span class="text-slate-300 font-bold text-[16px]">전일 종가</span>
-                                <span class="text-slate-200 font-mono font-bold">${formatNumber(itemObj.prevClose)}원</span>
+                                <span class="text-slate-600 font-bold text-[16px]">전일 종가</span>
+                                <span class="text-slate-800 font-mono font-bold">${formatNumber(itemObj.prevClose)}원</span>
                             </div>
                             <div class="flex justify-between items-center">
-                                <span class="text-slate-300 font-bold text-[16px]">당일 거래량</span>
-                                <span class="text-slate-200 font-mono font-bold">${view.displayVolume}</span>
+                                <span class="text-slate-600 font-bold text-[16px]">당일 거래량</span>
+                                <span class="text-slate-800 font-mono font-bold">${view.displayVolume}</span>
                             </div>
                             <div class="flex justify-between items-center">
-                                <span class="text-slate-300 font-bold text-[16px]">${itemObj.isGold ? '거래소' : '시가총액'}</span>
-                                <span class="text-slate-200 font-bold">${view.displayMCap}</span>
+                                <span class="text-slate-600 font-bold text-[16px]">${itemObj.isGold ? '거래소' : '시가총액'}</span>
+                                <span class="text-slate-800 font-bold">${view.displayMCap}</span>
                             </div>
                         </div>
 
@@ -582,25 +581,25 @@
         // 계산기 슬라이드: 종목별 이번 분배금(주당) 표시 + 보유주식수 직접 입력 + 합계/비율 계산
         function renderCalculatorSlide() {
             const rows = ETF_DATABASE.filter(item => !item.isGold).map(itemObj => `
-                <div class="bg-slate-950/30 border border-slate-700/50 rounded-xl p-3 space-y-2">
+                <div class="bg-slate-50 border border-slate-300 rounded-xl p-3 space-y-2">
                     <div class="flex justify-between items-start gap-2">
-                        <h4 class="text-[16px] font-bold text-slate-200 truncate">${itemObj.name}</h4>
+                        <h4 class="text-[16px] font-bold text-slate-800 truncate">${itemObj.name}</h4>
                         <div class="text-right shrink-0">
-                            <span class="text-[14px] text-slate-400 block font-bold">이번 분배금(주당)</span>
-                            <span class="text-[17px] font-black text-slate-100">${itemObj.divAmt || "대기중"}</span>
+                            <span class="text-[14px] text-slate-500 block font-bold">이번 분배금(주당)</span>
+                            <span class="text-[17px] font-black text-slate-900">${itemObj.divAmt || "대기중"}</span>
                         </div>
                     </div>
-                    <div class="flex items-center justify-between gap-3 bg-slate-900/60 rounded-lg px-3 py-2">
-                        <label class="text-[15px] text-slate-300 font-bold shrink-0">보유 주식수</label>
+                    <div class="flex items-center justify-between gap-3 bg-white rounded-lg px-3 py-2">
+                        <label class="text-[15px] text-slate-600 font-bold shrink-0">보유 주식수</label>
                         <input type="number" inputmode="numeric" min="0" placeholder="0"
-                               class="w-24 text-right bg-slate-800 text-white text-[17px] font-bold rounded-lg px-3 py-2 border border-slate-600 focus:outline-none focus:border-blue-500"
+                               class="w-24 text-right bg-white text-slate-900 text-[17px] font-bold rounded-lg px-3 py-2 border border-slate-300 focus:outline-none focus:border-blue-500"
                                value="${userShares[itemObj.ticker] || ''}"
                                data-ticker="${itemObj.ticker}" oninput="handleShareInput(this)" />
-                        <span class="text-[15px] text-slate-400 shrink-0">주</span>
+                        <span class="text-[15px] text-slate-500 shrink-0">주</span>
                     </div>
-                    <div class="flex justify-between items-center pt-1 border-t border-slate-800/50">
-                        <span class="text-[15px] text-slate-400 font-bold">예상 수령액</span>
-                        <span class="text-[18px] font-black text-emerald-400" data-ticker-result="${itemObj.ticker}">0원</span>
+                    <div class="flex justify-between items-center pt-1 border-t border-slate-200">
+                        <span class="text-[15px] text-slate-500 font-bold">예상 수령액</span>
+                        <span class="text-[18px] font-black text-emerald-600" data-ticker-result="${itemObj.ticker}">0원</span>
                     </div>
                 </div>
             `).join("");
@@ -608,26 +607,26 @@
             const slide = document.createElement("div");
             slide.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5";
             slide.innerHTML = `
-                <div class="bg-slate-900/80 border border-slate-700 rounded-[1.5rem] p-3.5 flex-1 flex flex-col shadow-2xl relative overflow-y-auto no-scrollbar">
+                <div class="bg-white border border-slate-300 rounded-[1.5rem] p-3.5 flex-1 flex flex-col shadow-2xl relative overflow-y-auto no-scrollbar">
                     <div class="space-y-2 relative z-10">
-                        <h3 class="text-[21px] font-black text-white leading-snug">내 분배금 계산기</h3>
+                        <h3 class="text-[21px] font-black text-slate-900 leading-snug">내 분배금 계산기</h3>
 
                         <div class="space-y-2">
                             ${rows}
                         </div>
 
-                        <div class="bg-slate-950/60 border border-slate-700 rounded-2xl p-3 space-y-2">
+                        <div class="bg-slate-100 border border-slate-300 rounded-2xl p-3 space-y-2">
                             <div class="flex justify-between items-center">
-                                <span class="text-[15px] text-slate-300 font-bold">보유 평가금액 합(현재가 기준)</span>
-                                <span id="calc-total-value" class="text-[17px] font-black text-slate-100">0원</span>
+                                <span class="text-[15px] text-slate-600 font-bold">보유 평가금액 합(현재가 기준)</span>
+                                <span id="calc-total-value" class="text-[17px] font-black text-slate-900">0원</span>
                             </div>
                             <div class="flex justify-between items-center">
-                                <span class="text-[15px] text-slate-300 font-bold">내 분배금 합</span>
-                                <span id="calc-total-dividend" class="text-[17px] font-black text-emerald-400">0원</span>
+                                <span class="text-[15px] text-slate-600 font-bold">내 분배금 합</span>
+                                <span id="calc-total-dividend" class="text-[17px] font-black text-emerald-600">0원</span>
                             </div>
-                            <div class="flex justify-between items-center pt-2 border-t border-slate-800">
-                                <span class="text-[16px] text-white font-black">분배율</span>
-                                <span id="calc-total-rate" class="text-[21px] font-black text-violet-400">0.00%</span>
+                            <div class="flex justify-between items-center pt-2 border-t border-slate-200">
+                                <span class="text-[16px] text-slate-900 font-black">분배율</span>
+                                <span id="calc-total-rate" class="text-[21px] font-black text-violet-600">0.00%</span>
                             </div>
                         </div>
                     </div>
@@ -652,33 +651,27 @@
                         const diff = itemObj.price - itemObj.previousClose;
                         const diffRate = (diff / itemObj.previousClose) * 100;
                         const isPositive = diff >= 0;
-                        changeColorClass = isPositive ? "text-rose-500 font-bold" : "text-blue-400 font-bold";
+                        changeColorClass = isPositive ? "text-rose-600 font-bold" : "text-blue-600 font-bold";
                         displayChange = `${isPositive ? "▲" : "▼"}${Math.abs(diff).toFixed(decimals)} (${isPositive ? "+" : ""}${diffRate.toFixed(2)}%)`;
                         displayPrevClose = itemObj.previousClose.toLocaleString("ko-KR", { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
                     }
                 }
 
                 return `
-                    <div class="bg-slate-950/30 border border-slate-700/50 rounded-xl p-3 flex justify-between items-center">
-                        <span class="text-[16px] font-bold text-slate-200">${itemObj.name}</span>
+                    <div class="bg-white border border-slate-300 rounded-2xl p-4 flex justify-between items-center">
+                        <span class="text-[18px] font-extrabold text-slate-800">${itemObj.name}</span>
                         <div class="text-right">
-                            <div class="text-[18px] font-black text-white">${displayPrice}</div>
-                            <div class="text-[14px] ${changeColorClass}">${displayChange}</div>
-                            <div class="text-[13px] text-white">전일 종가 ${displayPrevClose}</div>
+                            <div class="text-[18px] font-black text-slate-900">${displayPrice}</div>
+                            <div class="text-[15px] ${changeColorClass} mt-1">${displayChange}</div>
+                            <div class="text-[13px] text-slate-900">전일 종가 ${displayPrevClose}</div>
                         </div>
                     </div>
                 `;
             }).join("");
 
             const slide = document.createElement("div");
-            slide.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5";
-            slide.innerHTML = `
-                <div class="bg-slate-900/80 border border-slate-700 rounded-[1.5rem] p-3.5 flex-1 flex flex-col justify-center shadow-2xl relative overflow-y-auto no-scrollbar">
-                    <div class="space-y-2 relative z-10">
-                        ${rows}
-                    </div>
-                </div>
-            `;
+            slide.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5 space-y-3";
+            slide.innerHTML = rows;
             return slide;
         }
 
