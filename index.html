@@ -75,7 +75,7 @@
 
         // 종목 데이터베이스 (분배율 필드는 제외, 분배금/지급일은 유지)
         const ETF_DATABASE = [
-            { id: "GOLD", name: "KRX 금 현물 (1kg)", ticker: "M04020000", isGold: true },
+            { id: "GOLD", name: "KRX 금 현물", ticker: "M04020000", isGold: true },
             { id: "TIGER_NSQ100_DAILY_CC", name: "TIGER 미국나스닥100타겟데일리커버드콜", ticker: "486290", isGold: false },
             { id: "TIGER_SP500_DAILY_CC", name: "TIGER 미국S&P500타겟데일리커버드콜", ticker: "482730", isGold: false },
             { id: "TIGER_US30_CC", name: "TIGER 미국30년국채커버드콜액티브", ticker: "476550", isGold: false },
@@ -492,7 +492,7 @@
                         <span class="font-extrabold text-slate-800">${view.displayDivAmt}</span>
                     </div>
                     <div class="flex flex-col justify-center items-end bg-slate-50 px-4 py-2 rounded-xl border border-slate-300 text-right">
-                        <span class="text-slate-600 text-[16px] font-bold mb-1">분배금 지급일</span>
+                        <span class="text-slate-600 text-[16px] font-bold mb-1">분배금 기준일</span>
                         <span class="font-extrabold text-slate-800">${view.displayRecordDate}</span>
                     </div>
                 </div>
