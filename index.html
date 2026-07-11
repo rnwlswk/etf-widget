@@ -277,6 +277,28 @@
             }
         }
 
+        // ETF는 자체 API에 52주 데이터가 없어서, 일반 주식현재가 API로 진짜 52주 최고/최저를 별도 조회
+        // (금현물은 원래 쓰는 API 자체에 52주 필드가 있어서 이 호출이 필요 없음)
+        async function fetch52WeekRange(itemObj) {
+            try {
+                const res = await fetch(`${MY_SERVER}/api/kis-52week/${itemObj.ticker}`);
+                if (!res.ok) throw new Error("52주 조회 서버 오류");
+                const data = await res.json();
+                if (!data.success) throw new Error("52주 데이터 없음");
+
+                const high = parseFloat(data.w52_hgpr);
+                const low = parseFloat(data.w52_lwpr);
+                if (high > 0 && low > 0) {
+                    itemObj.rangeHigh = high;
+                    itemObj.rangeLow = low;
+                    itemObj.rangeLabel = "52주";
+                }
+                // 실패하거나 값이 이상하면 fetchPriceData에서 이미 넣어둔 "연중" 값을 그대로 둠 (폴백)
+            } catch (e) {
+                console.warn(`[${itemObj.ticker}] 52주 데이터 로드 오류(연중 데이터로 대체):`, e);
+            }
+        }
+
         async function updateSingleItem(itemObj) {
             let priceSuccess = false;
             try {
@@ -286,9 +308,10 @@
                 priceSuccess = false;
             }
 
-            // 서버 동시 부하를 줄이기 위해 분배금 요청은 현재가 요청이 끝난 뒤 순차 실행
+            // 서버 동시 부하를 줄이기 위해 후속 요청들은 현재가 요청이 끝난 뒤 순차 실행
             if (!itemObj.isGold) {
                 await fetchDividendData(itemObj);
+                await fetch52WeekRange(itemObj);
             }
 
             return priceSuccess;
@@ -521,9 +544,15 @@
                         <div class="relative h-2 bg-slate-200 rounded-full mb-2">
                             <div class="absolute top-1/2 w-3.5 h-3.5 rounded-full bg-blue-600 border-2 border-white shadow" style="left: calc(${posPct.toFixed(1)}% - 7px); transform: translateY(-50%);"></div>
                         </div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-slate-600 font-bold text-[15px]">${itemObj.rangeLabel} 최저 ${formatNumber(itemObj.rangeLow)}원</span>
-                            <span class="text-slate-600 font-bold text-[15px]">${itemObj.rangeLabel} 최고 ${formatNumber(itemObj.rangeHigh)}원</span>
+                        <div class="flex justify-between items-start">
+                            <div class="flex flex-col">
+                                <span class="text-slate-600 font-bold text-[14px]">${itemObj.rangeLabel} 최저</span>
+                                <span class="text-slate-800 font-bold text-[16px] mt-0.5">${formatNumber(itemObj.rangeLow)}원</span>
+                            </div>
+                            <div class="flex flex-col items-end">
+                                <span class="text-slate-600 font-bold text-[14px]">${itemObj.rangeLabel} 최고</span>
+                                <span class="text-slate-800 font-bold text-[16px] mt-0.5">${formatNumber(itemObj.rangeHigh)}원</span>
+                            </div>
                         </div>
                     </div>
                 `;
