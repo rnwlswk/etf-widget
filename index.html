@@ -86,7 +86,8 @@
             ...item,
             price: null, prevClose: null, changeRate: null, changeAmt: null,
             discrepancy: null, nav: null, volume: null, marketCap: null,
-            divAmt: null, divAmtRaw: null, recordDate: null
+            divAmt: null, divAmtRaw: null, recordDate: null,
+            rangeHigh: null, rangeLow: null, rangeLabel: null
         }));
 
         // 계산기 탭에서 입력한 보유 주식수 (세션 메모리에만 보관 - 새로고침 시에도 값 유지)
@@ -231,6 +232,19 @@
                     itemObj.discrepancy = null;
                 }
             }
+
+            // 최고/최저가 대비 위치: 금현물은 진짜 52주(w52_*), ETF는 연중(dryy_*) 필드를 사용
+            // (ETF API는 52주 필드를 제공하지 않고 연중 최고/최저만 제공함)
+            if (itemObj.isGold) {
+                itemObj.rangeHigh = parseFloat(out.w52_hgpr) || null;
+                itemObj.rangeLow = parseFloat(out.w52_lwpr) || null;
+                itemObj.rangeLabel = "52주";
+            } else {
+                itemObj.rangeHigh = parseFloat(out.stck_dryy_hgpr) || null;
+                itemObj.rangeLow = parseFloat(out.stck_dryy_lwpr) || null;
+                itemObj.rangeLabel = "연중";
+            }
+
             return true;
         }
 
@@ -498,6 +512,23 @@
                 </div>
             `;
 
+            let rangeBlock = '';
+            if (itemObj.rangeHigh && itemObj.rangeLow && itemObj.price) {
+                const range = itemObj.rangeHigh - itemObj.rangeLow;
+                const posPct = range > 0 ? Math.min(100, Math.max(0, ((itemObj.price - itemObj.rangeLow) / range) * 100)) : 50;
+                rangeBlock = `
+                    <div class="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
+                        <div class="relative h-2 bg-slate-200 rounded-full mb-2">
+                            <div class="absolute top-1/2 w-3.5 h-3.5 rounded-full bg-blue-600 border-2 border-white shadow" style="left: calc(${posPct.toFixed(1)}% - 7px); transform: translateY(-50%);"></div>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-slate-600 font-bold text-[15px]">${itemObj.rangeLabel} 최저 ${formatNumber(itemObj.rangeLow)}원</span>
+                            <span class="text-slate-600 font-bold text-[15px]">${itemObj.rangeLabel} 최고 ${formatNumber(itemObj.rangeHigh)}원</span>
+                        </div>
+                    </div>
+                `;
+            }
+
             const slideCard = document.createElement("div");
             slideCard.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5";
             slideCard.innerHTML = `
@@ -520,6 +551,8 @@
                         </div>
 
                         ${navBlock}
+
+                        ${rangeBlock}
 
                         <div class="space-y-1">
                             ${generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker)}
