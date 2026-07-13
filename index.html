@@ -75,13 +75,13 @@
 
         // 종목 데이터베이스 (분배율 필드는 제외, 분배금/지급일은 유지)
         const ETF_DATABASE = [
-            { id: "GOLD", name: "KRX 금 현물", ticker: "M04020000", isGold: true },
             { id: "TIGER_NSQ100_DAILY_CC", name: "TIGER 미국나스닥100타겟데일리커버드콜", ticker: "486290", isGold: false },
             { id: "TIGER_SP500_DAILY_CC", name: "TIGER 미국S&P500타겟데일리커버드콜", ticker: "482730", isGold: false },
             { id: "TIGER_US30_CC", name: "TIGER 미국30년국채커버드콜액티브", ticker: "476550", isGold: false },
             { id: "RISE_200_WEEKLY_CC", name: "RISE 200위클리커버드콜", ticker: "475720", isGold: false },
             { id: "KODEX_FIN_DIV", name: "KODEX 금융고배당TOP10타겟위클리커버드콜", ticker: "498410", isGold: false },
-            { id: "TIGER_REITS", name: "TIGER 리츠부동산인프라", ticker: "329200", isGold: false }
+            { id: "TIGER_REITS", name: "TIGER 리츠부동산인프라", ticker: "329200", isGold: false },
+            { id: "GOLD", name: "KRX 금 현물", ticker: "M04020000", isGold: true }
         ].map(item => ({
             ...item,
             price: null, prevClose: null, changeRate: null, changeAmt: null,
@@ -484,7 +484,7 @@
             row.className = "bg-white border border-slate-300 active-scale rounded-2xl p-2.5 flex justify-between items-center cursor-pointer transition-all duration-200 hover:border-slate-400 hover:bg-slate-50";
             row.innerHTML = `
                 <div class="flex-1 min-w-0 pr-2">
-                    <h3 class="text-[19px] font-extrabold text-slate-800 truncate leading-tight">${itemObj.name}</h3>
+                    <h3 class="text-[19px] font-extrabold text-slate-800 leading-tight break-keep" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${itemObj.name}</h3>
                 </div>
                 <div class="text-right shrink-0 pr-3 min-w-[115px]">
                     <div class="text-[19px] font-black text-slate-900">${view.displayPrice}</div>
