@@ -18,13 +18,18 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap');
-        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; color: #0f172a; -webkit-tap-highlight-color: transparent; overflow: hidden; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; color: #0f172a; -webkit-tap-highlight-color: transparent; overflow: hidden; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); font-variant-numeric: tabular-nums; }
         .snap-x { scroll-snap-type: x mandatory; scroll-behavior: smooth; }
         .snap-center { scroll-snap-align: center; scroll-snap-stop: always; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .active-scale:active { transform: scale(0.95); }
         .cooldown-btn { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+        @keyframes value-flash {
+            0% { background-color: rgba(59, 130, 246, 0.15); }
+            100% { background-color: transparent; }
+        }
+        .flash-updated { animation: value-flash 1.1s ease-out; }
     </style>
 </head>
 <body class="text-slate-900 min-h-screen flex flex-col justify-between items-center p-4 select-none">
@@ -92,6 +97,9 @@
 
         // 계산기 탭에서 입력한 보유 주식수 (세션 메모리에만 보관 - 새로고침 시에도 값 유지)
         const userShares = {};
+
+        // 직전 새로고침 때의 가격을 기억해뒀다가, 이번에 바뀐 카드만 살짝 반짝이게 하는 용도
+        const lastKnownPrices = {};
 
         // 글로벌 지수/환율/금 (야후 파이낸스 기반 - KIS와 별개의 백엔드 라우트)
         const GLOBAL_INDEX_LIST = [
@@ -440,6 +448,7 @@
                 badgeColorClass: "text-slate-600 bg-white border-slate-200",
                 displayPrice: hasValue ? "" : "로딩 중...",
                 displayChange: "-",
+                trendDirection: "flat",
                 displayVolume: "-",
                 displayMCap: "-",
                 displayDiscrepancy: "-",
@@ -448,13 +457,17 @@
             };
             if (!hasValue) return view;
 
-            const isPositive = itemObj.changeAmt >= 0;
-            const changeSign = isPositive ? "▲" : "▼";
+            const isPositive = itemObj.changeAmt > 0;
+            const isNegative = itemObj.changeAmt < 0;
+            const changeSign = isPositive ? "▲" : (isNegative ? "▼" : "-");
             const changePctSign = isPositive ? "+" : "";
 
-            view.changeColorClass = isPositive ? "text-rose-600 font-bold" : "text-blue-600 font-bold";
+            view.trendDirection = isPositive ? "up" : (isNegative ? "down" : "flat");
+            view.changeColorClass = isPositive ? "text-rose-600 font-bold" : (isNegative ? "text-blue-600 font-bold" : "text-slate-500 font-bold");
             view.displayPrice = formatNumber(itemObj.price) + "원";
-            view.displayChange = `${changeSign}${formatNumber(Math.abs(itemObj.changeAmt))} (${changePctSign}${itemObj.changeRate.toFixed(2)}%)`;
+            view.displayChange = (isPositive || isNegative)
+                ? `${changeSign}${formatNumber(Math.abs(itemObj.changeAmt))} (${changePctSign}${itemObj.changeRate.toFixed(2)}%)`
+                : `보합 (${itemObj.changeRate.toFixed(2)}%)`;
 
             if (itemObj.isGold) {
                 view.displayVolume = itemObj.volume ? formatNumber(itemObj.volume) + "g" : "집계 불가";
@@ -481,7 +494,14 @@
         function renderSummaryRow(itemObj, index, view) {
             const row = document.createElement("div");
             row.onclick = () => slideTo(index + 2);
-            row.className = "bg-white border border-slate-300 active-scale rounded-2xl p-2.5 flex justify-between items-center cursor-pointer transition-all duration-200 hover:border-slate-400 hover:bg-slate-50";
+
+            const barColor = view.trendDirection === "up" ? "border-l-rose-500" : (view.trendDirection === "down" ? "border-l-blue-500" : "border-l-slate-300");
+
+            const priceKey = `summary:${itemObj.ticker}`;
+            const didChange = lastKnownPrices[priceKey] !== undefined && lastKnownPrices[priceKey] !== itemObj.price;
+            if (itemObj.price !== null) lastKnownPrices[priceKey] = itemObj.price;
+
+            row.className = `bg-white border border-slate-300 border-l-4 ${barColor} active-scale rounded-2xl p-2.5 flex justify-between items-center cursor-pointer transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 ${didChange ? 'flash-updated' : ''}`;
             row.innerHTML = `
                 <div class="flex-1 min-w-0 pr-2">
                     <h3 class="text-[19px] font-extrabold text-slate-800 leading-tight break-keep" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${itemObj.name}</h3>
@@ -736,24 +756,34 @@
                 let displayChange = "-";
                 let displayPrevClose = "-";
                 let changeColorClass = "text-slate-500";
+                let barColor = "border-l-slate-300";
+
+                const decimals = 2; // 모든 지수 소수점 자리수 통일
 
                 if (hasValue) {
-                    const decimals = itemObj.key === "usdkrw" ? 2 : (itemObj.key === "us30y" ? 3 : 2);
                     displayPrice = itemObj.price.toLocaleString("ko-KR", { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
                     if (itemObj.previousClose) {
                         const diff = itemObj.price - itemObj.previousClose;
                         const diffRate = (diff / itemObj.previousClose) * 100;
-                        const isPositive = diff >= 0;
-                        changeColorClass = isPositive ? "text-rose-600 font-bold" : "text-blue-600 font-bold";
-                        displayChange = `${isPositive ? "▲" : "▼"}${Math.abs(diff).toFixed(decimals)} (${isPositive ? "+" : ""}${diffRate.toFixed(2)}%)`;
+                        const isPositive = diff > 0;
+                        const isNegative = diff < 0;
+                        changeColorClass = isPositive ? "text-rose-600 font-bold" : (isNegative ? "text-blue-600 font-bold" : "text-slate-500 font-bold");
+                        barColor = isPositive ? "border-l-rose-500" : (isNegative ? "border-l-blue-500" : "border-l-slate-300");
+                        displayChange = (isPositive || isNegative)
+                            ? `${isPositive ? "▲" : "▼"}${Math.abs(diff).toFixed(decimals)} (${isPositive ? "+" : ""}${diffRate.toFixed(2)}%)`
+                            : `보합 (0.00%)`;
                         displayPrevClose = itemObj.previousClose.toLocaleString("ko-KR", { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
                     }
                 }
 
                 const openDotColor = isMarketOpen(itemObj.key) ? "bg-emerald-500" : "bg-slate-400";
 
+                const priceKey = `global:${itemObj.key}`;
+                const didChange = lastKnownPrices[priceKey] !== undefined && lastKnownPrices[priceKey] !== itemObj.price;
+                if (itemObj.price !== null && itemObj.price !== undefined) lastKnownPrices[priceKey] = itemObj.price;
+
                 return `
-                    <div class="bg-white border border-slate-300 rounded-2xl p-2.5 flex justify-between items-center">
+                    <div class="bg-white border border-slate-300 border-l-4 ${barColor} rounded-2xl p-2.5 flex justify-between items-center ${didChange ? 'flash-updated' : ''}">
                         <div class="flex items-center gap-2">
                             <span class="w-2.5 h-2.5 rounded-full ${openDotColor} shrink-0"></span>
                             <span class="text-[19px] font-extrabold text-slate-800">${itemObj.name}</span>
