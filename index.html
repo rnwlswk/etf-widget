@@ -11,7 +11,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Market Live">
     <meta name="theme-color" content="#f8fafc">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3135/3135715.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
 
     <link rel="manifest" href="manifest.json">
 
@@ -30,6 +30,7 @@
             100% { background-color: transparent; }
         }
         .flash-updated { animation: value-flash 1.1s ease-out; }
+        .dragging-row { opacity: 0.85; box-shadow: 0 8px 24px rgba(0,0,0,0.18); transform: scale(1.02); z-index: 50; transition: none !important; }
     </style>
 </head>
 <body class="text-slate-900 min-h-screen flex flex-col justify-between items-center p-4 select-none">
@@ -55,8 +56,18 @@
                         <span class="text-slate-500">·</span>
                         <span id="update-timestamp">-</span>
                     </div>
-                    <div class="flex-1 overflow-y-auto no-scrollbar space-y-[3px] pb-20" id="summary-list-container">
+                    <div class="flex-1 overflow-y-auto no-scrollbar space-y-[3px] pb-2" id="summary-list-container">
                         <!-- 자산 목록이 여기에 동적으로 추가됩니다 -->
+                    </div>
+                    <div class="shrink-0 bg-white border border-slate-300 rounded-2xl p-3 flex justify-between items-center gap-3 mb-16">
+                        <div>
+                            <span class="text-[13px] text-slate-500 font-bold block">오늘 총 등락액</span>
+                            <span id="portfolio-total-change" class="text-[19px] font-black text-slate-500">0원</span>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-[13px] text-slate-500 font-bold block">보유 총액</span>
+                            <span id="portfolio-total-value" class="text-[19px] font-black text-slate-900">0원</span>
+                        </div>
                     </div>
                 </div>
 
@@ -98,6 +109,13 @@
         // 계산기 탭에서 입력한 보유 주식수 (세션 메모리에만 보관 - 새로고침 시에도 값 유지)
         const userShares = {};
 
+        // 종목 표시 순서 (드래그로 재배치한 결과, 세션 메모리에만 보관)
+        let itemOrder = ETF_DATABASE.map(item => item.id);
+        function getOrderedItems() {
+            return itemOrder.map(id => ETF_DATABASE.find(item => item.id === id)).filter(Boolean);
+        }
+        let bulkShareValue = ""; // "전체 종목 동일 주식수" 입력값 (새로고침 후에도 유지)
+
         // 직전 새로고침 때의 가격을 기억해뒀다가, 이번에 바뀐 카드만 살짝 반짝이게 하는 용도
         const lastKnownPrices = {};
 
@@ -125,6 +143,24 @@
         function formatNumber(num) {
             if (num === undefined || num === null || isNaN(num)) return "-";
             return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        // 숫자 카운트업 애니메이션: fromValue -> toValue로 스르륵 굴러가며 변함
+        function animateCountUp(el, fromValue, toValue, suffix = "", duration = 700) {
+            if (!el || fromValue === null || fromValue === undefined || fromValue === toValue) {
+                if (el) el.innerText = formatNumber(Math.round(toValue)) + suffix;
+                return;
+            }
+            const start = performance.now();
+            function step(now) {
+                const progress = Math.min(1, (now - start) / duration);
+                const eased = 1 - Math.pow(1 - progress, 3); // ease-out
+                const current = fromValue + (toValue - fromValue) * eased;
+                el.innerText = formatNumber(Math.round(current)) + suffix;
+                if (progress < 1) requestAnimationFrame(step);
+                else el.innerText = formatNumber(Math.round(toValue)) + suffix;
+            }
+            requestAnimationFrame(step);
         }
 
         // 직전 회차 대비 분배금 증감 화살표 (▲상승 / ▼하락 / -동일)
@@ -513,14 +549,91 @@
             return view;
         }
 
+        // 요약 리스트 카드를 길게 누른 뒤 드래그하면 순서를 재배치함
+        function attachDragHandlers(row, itemObj) {
+            let pressTimer = null;
+            let startY = 0;
+            let dragging = false;
+            let startRowTop = 0;
+
+            function onTouchStart(e) {
+                const touch = e.touches[0];
+                startY = touch.clientY;
+                clearTimeout(pressTimer);
+                pressTimer = setTimeout(() => {
+                    dragging = true;
+                    row.dataset.suppressClick = "1";
+                    row.classList.add("dragging-row");
+                    startRowTop = row.getBoundingClientRect().top;
+                    if (navigator.vibrate) navigator.vibrate(15);
+                }, 450);
+            }
+
+            function onTouchMove(e) {
+                const touch = e.touches[0];
+                if (!dragging) {
+                    if (Math.abs(touch.clientY - startY) > 12) clearTimeout(pressTimer);
+                    return;
+                }
+                e.preventDefault();
+                const deltaY = touch.clientY - startY;
+                row.style.transform = `translateY(${deltaY}px) scale(1.02)`;
+
+                const container = document.getElementById("summary-list-container");
+                const siblings = Array.from(container.children).filter(el => el !== row);
+                const currentCenter = startRowTop + deltaY + row.offsetHeight / 2;
+
+                for (const sib of siblings) {
+                    const rect = sib.getBoundingClientRect();
+                    const sibCenter = rect.top + rect.height / 2;
+                    const sibId = sib.dataset.itemId;
+                    const rowId = row.dataset.itemId;
+                    const sibIndex = itemOrder.indexOf(sibId);
+                    const rowIndex = itemOrder.indexOf(rowId);
+
+                    if (rowIndex < sibIndex && currentCenter > sibCenter) {
+                        itemOrder.splice(rowIndex, 1);
+                        itemOrder.splice(sibIndex, 0, rowId);
+                        container.insertBefore(row, sib.nextSibling);
+                        break;
+                    } else if (rowIndex > sibIndex && currentCenter < sibCenter) {
+                        itemOrder.splice(rowIndex, 1);
+                        itemOrder.splice(sibIndex, 0, rowId);
+                        container.insertBefore(row, sib);
+                        break;
+                    }
+                }
+            }
+
+            function onTouchEnd() {
+                clearTimeout(pressTimer);
+                if (dragging) {
+                    dragging = false;
+                    row.classList.remove("dragging-row");
+                    row.style.transform = "";
+                    // 재배치 이후엔 각 카드의 onclick에 박혀있던 인덱스가 낡은 값이 되므로 통째로 다시 그림
+                    renderApp();
+                    setTimeout(() => { row.dataset.suppressClick = ""; }, 50);
+                }
+            }
+
+            row.addEventListener("touchstart", onTouchStart, { passive: true });
+            row.addEventListener("touchmove", onTouchMove, { passive: false });
+            row.addEventListener("touchend", onTouchEnd);
+            row.addEventListener("touchcancel", onTouchEnd);
+        }
+
+        // 요약 리스트 한 행 렌더링 (드래그 재배치 + 변동 시 카운트업/반짝임 포함)
         function renderSummaryRow(itemObj, index, view) {
             const row = document.createElement("div");
-            row.onclick = () => slideTo(index + 2);
+            row.onclick = () => { if (!row.dataset.suppressClick) slideTo(index + 2); };
+            row.dataset.itemId = itemObj.id;
 
             const barColor = view.trendDirection === "up" ? "border-l-rose-500" : (view.trendDirection === "down" ? "border-l-blue-500" : "border-l-slate-300");
 
             const priceKey = `summary:${itemObj.ticker}`;
-            const didChange = lastKnownPrices[priceKey] !== undefined && lastKnownPrices[priceKey] !== itemObj.price;
+            const prevPrice = lastKnownPrices[priceKey];
+            const didChange = prevPrice !== undefined && prevPrice !== itemObj.price;
             if (itemObj.price !== null) lastKnownPrices[priceKey] = itemObj.price;
 
             row.className = `bg-white border border-slate-300 border-l-4 ${barColor} active-scale rounded-2xl p-2.5 flex justify-between items-center cursor-pointer transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 ${didChange ? 'flash-updated' : ''}`;
@@ -529,7 +642,7 @@
                     <h3 class="text-[19px] font-extrabold text-slate-800 leading-tight break-keep" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${itemObj.name}</h3>
                 </div>
                 <div class="text-right shrink-0 pr-3 min-w-[115px]">
-                    <div class="text-[19px] font-black text-slate-900">${view.displayPrice}</div>
+                    <div class="text-[19px] font-black text-slate-900" data-price-el="1">${view.displayPrice}</div>
                     <div class="text-[16px] ${view.changeColorClass} mt-1">${view.displayChange}</div>
                 </div>
                 <div class="shrink-0 text-right min-w-[82px]">
@@ -538,6 +651,14 @@
                     </span>
                 </div>
             `;
+
+            // 숫자 카운트업: 직전 값이 있고 실제로 바뀐 경우에만 애니메이션 (첫 로딩 땐 바로 표시)
+            if (didChange && itemObj.price !== null && prevPrice !== null) {
+                const priceEl = row.querySelector('[data-price-el="1"]');
+                animateCountUp(priceEl, prevPrice, itemObj.price, "원");
+            }
+
+            attachDragHandlers(row, itemObj);
             return row;
         }
 
@@ -633,10 +754,12 @@
                                 <span class="text-slate-600 font-bold text-[17px]">당일 거래량</span>
                                 <span class="text-slate-800 font-mono font-bold">${view.displayVolume}</span>
                             </div>
+                            ${itemObj.isGold ? '' : `
                             <div class="flex justify-between items-center">
-                                <span class="text-slate-600 font-bold text-[17px]">${itemObj.isGold ? '거래소' : '시가총액'}</span>
+                                <span class="text-slate-600 font-bold text-[17px]">시가총액</span>
                                 <span class="text-slate-800 font-bold">${view.displayMCap}</span>
                             </div>
+                            `}
                         </div>
 
                         ${divBlock}
@@ -646,10 +769,50 @@
             return slideCard;
         }
 
+        // 요약 리스트 하단의 "오늘 총 등락액 / 보유 총액" 계산 - 계산기에 입력된 보유수량을 그대로 재사용
+        // (금현물은 계산기에 수량 입력칸이 없어서 이 합계엔 포함되지 않음)
+        function updatePortfolioSummary() {
+            const changeEl = document.getElementById("portfolio-total-change");
+            const valueEl = document.getElementById("portfolio-total-value");
+            if (!changeEl || !valueEl) return;
+
+            let totalChange = 0;
+            let totalValue = 0;
+            ETF_DATABASE.forEach(itemObj => {
+                const shares = parseFloat(userShares[itemObj.ticker]) || 0;
+                if (shares > 0 && itemObj.price !== null) {
+                    totalChange += (itemObj.changeAmt || 0) * shares;
+                    totalValue += itemObj.price * shares;
+                }
+            });
+
+            const isPositive = totalChange > 0;
+            const isNegative = totalChange < 0;
+            const colorClass = isPositive ? "text-rose-600" : (isNegative ? "text-blue-600" : "text-slate-500");
+            const sign = isPositive ? "+" : "";
+            changeEl.innerText = `${sign}${formatNumber(Math.round(totalChange))}원`;
+            changeEl.className = `text-[19px] font-black ${colorClass}`;
+
+            valueEl.innerText = formatNumber(Math.round(totalValue)) + "원";
+        }
+
         // 보유 주식수 입력 시 호출 - 값 저장 후 합계 재계산
         function handleShareInput(inputEl) {
             userShares[inputEl.dataset.ticker] = inputEl.value;
             updateCalculator();
+            updatePortfolioSummary();
+        }
+
+        // "전체 종목 동일 주식수" 입력창에 값을 넣으면, 모든 종목 입력창에 같은 값을 채워넣고 합계를 재계산
+        function applyShareToAll(value) {
+            bulkShareValue = value;
+            ETF_DATABASE.filter(item => !item.isGold).forEach(itemObj => {
+                userShares[itemObj.ticker] = value;
+                const inputEl = document.querySelector(`input[data-ticker="${itemObj.ticker}"]`);
+                if (inputEl) inputEl.value = value;
+            });
+            updateCalculator();
+            updatePortfolioSummary();
         }
 
         // 계산기 탭: 종목별 (분배금 × 보유주식수) 및 (현재가 × 보유주식수) 합계, 분배율 재계산
@@ -713,6 +876,14 @@
                     <div class="space-y-2 relative z-10">
                         <h3 class="text-[21px] font-black text-slate-900 leading-snug">내 분배금 계산기</h3>
 
+                        <div class="flex items-center justify-between gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                            <label class="text-[15px] text-blue-700 font-bold shrink-0">전체 종목 동일 수량</label>
+                            <input type="number" inputmode="numeric" min="0" placeholder="0"
+                                   class="w-24 text-right bg-white text-slate-900 text-[17px] font-bold rounded-lg px-3 py-2 border border-blue-300 focus:outline-none focus:border-blue-500"
+                                   id="calc-bulk-input" value="${bulkShareValue}" oninput="applyShareToAll(this.value)" />
+                            <span class="text-[15px] text-blue-700 shrink-0">주</span>
+                        </div>
+
                         <div class="space-y-2">
                             ${rows}
                         </div>
@@ -772,6 +943,8 @@
         }
 
         function renderGlobalIndexSlide() {
+            const pendingAnimations = [];
+
             const rows = GLOBAL_INDEX_LIST.map(itemObj => {
                 const hasValue = itemObj.price !== null && itemObj.price !== undefined;
                 let displayPrice = "로딩 중...";
@@ -801,8 +974,13 @@
                 const openDotColor = isMarketOpen(itemObj.key) ? "bg-emerald-500" : "bg-slate-400";
 
                 const priceKey = `global:${itemObj.key}`;
-                const didChange = lastKnownPrices[priceKey] !== undefined && lastKnownPrices[priceKey] !== itemObj.price;
+                const prevPrice = lastKnownPrices[priceKey];
+                const didChange = prevPrice !== undefined && prevPrice !== itemObj.price;
                 if (itemObj.price !== null && itemObj.price !== undefined) lastKnownPrices[priceKey] = itemObj.price;
+
+                if (didChange && hasValue && prevPrice !== null) {
+                    pendingAnimations.push({ key: itemObj.key, from: prevPrice, to: itemObj.price, decimals });
+                }
 
                 return `
                     <div class="bg-white border border-slate-300 border-l-4 ${barColor} rounded-2xl p-2.5 flex justify-between items-center ${didChange ? 'flash-updated' : ''}">
@@ -811,7 +989,7 @@
                             <span class="text-[19px] font-extrabold text-slate-800">${itemObj.name}</span>
                         </div>
                         <div class="text-right">
-                            <div class="text-[19px] font-black text-slate-900">${displayPrice}</div>
+                            <div class="text-[19px] font-black text-slate-900" data-global-price-el="${itemObj.key}">${displayPrice}</div>
                             <div class="text-[16px] ${changeColorClass} mt-1">${displayChange}</div>
                             <div class="text-[14px] text-slate-900">전일 종가 ${displayPrevClose}</div>
                         </div>
@@ -822,6 +1000,23 @@
             const slide = document.createElement("div");
             slide.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5 space-y-0.5";
             slide.innerHTML = rows;
+
+            pendingAnimations.forEach(anim => {
+                const el = slide.querySelector(`[data-global-price-el="${anim.key}"]`);
+                if (!el) return;
+                const start = performance.now();
+                const duration = 700;
+                function step(now) {
+                    const progress = Math.min(1, (now - start) / duration);
+                    const eased = 1 - Math.pow(1 - progress, 3);
+                    const current = anim.from + (anim.to - anim.from) * eased;
+                    el.innerText = current.toLocaleString("ko-KR", { maximumFractionDigits: anim.decimals, minimumFractionDigits: anim.decimals });
+                    if (progress < 1) requestAnimationFrame(step);
+                    else el.innerText = anim.to.toLocaleString("ko-KR", { maximumFractionDigits: anim.decimals, minimumFractionDigits: anim.decimals });
+                }
+                requestAnimationFrame(step);
+            });
+
             return slide;
         }
 
@@ -837,7 +1032,7 @@
             slider.appendChild(renderGlobalIndexSlide()); // 1번째: 글로벌 지수
             slider.appendChild(summarySlide);              // 2번째: 요약(금+ETF 현재가) 리스트
 
-            ETF_DATABASE.forEach((itemObj, index) => {
+            getOrderedItems().forEach((itemObj, index) => {
                 const view = buildDisplayValues(itemObj);
                 summaryContainer.appendChild(renderSummaryRow(itemObj, index, view));
                 slider.appendChild(renderDetailCard(itemObj, view));
@@ -845,6 +1040,7 @@
 
             slider.appendChild(renderCalculatorSlide());
             updateCalculator();
+            updatePortfolioSummary();
 
             slider.removeEventListener("scroll", handleSliderScroll);
             slider.addEventListener("scroll", handleSliderScroll);
