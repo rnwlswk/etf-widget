@@ -65,7 +65,7 @@
                             <span id="portfolio-total-change" class="text-[19px] font-black text-slate-500">0원</span>
                         </div>
                         <div class="text-right">
-                            <span class="text-[13px] text-slate-500 font-bold block">보유 총액</span>
+                            <span class="text-[13px] text-slate-500 font-bold block">종목들 총합(금 제외)</span>
                             <span id="portfolio-total-value" class="text-[19px] font-black text-slate-900">0원</span>
                         </div>
                     </div>
@@ -771,6 +771,9 @@
 
         // 요약 리스트 하단의 "오늘 총 등락액 / 보유 총액" 계산 - 계산기에 입력된 보유수량을 그대로 재사용
         // (금현물은 계산기에 수량 입력칸이 없어서 이 합계엔 포함되지 않음)
+        // 요약 리스트 하단의 "오늘 총 등락액 / 종목 총합" 계산
+        // 보유수량 입력 여부와 무관하게, 금현물을 뺀 나머지 종목들의 등락값/현재가를 그대로 더함
+        // (금현물은 가격 단위 자체가 워낙 커서(1kg 기준) 같이 더하면 숫자가 왜곡되므로 제외)
         function updatePortfolioSummary() {
             const changeEl = document.getElementById("portfolio-total-change");
             const valueEl = document.getElementById("portfolio-total-value");
@@ -778,11 +781,10 @@
 
             let totalChange = 0;
             let totalValue = 0;
-            ETF_DATABASE.forEach(itemObj => {
-                const shares = parseFloat(userShares[itemObj.ticker]) || 0;
-                if (shares > 0 && itemObj.price !== null) {
-                    totalChange += (itemObj.changeAmt || 0) * shares;
-                    totalValue += itemObj.price * shares;
+            ETF_DATABASE.filter(item => !item.isGold).forEach(itemObj => {
+                if (itemObj.price !== null) {
+                    totalChange += (itemObj.changeAmt || 0);
+                    totalValue += itemObj.price;
                 }
             });
 
