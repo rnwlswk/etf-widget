@@ -36,10 +36,11 @@
 <body class="text-slate-900 min-h-screen flex flex-col justify-between items-center p-4 select-none">
 
     <!-- 당겨서 새로고침 인디케이터 (화면 위쪽에서 아래로 당기면 나타남) -->
-    <div id="pull-refresh-indicator" class="fixed top-3 left-1/2 z-40 w-10 h-10 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center opacity-0 pointer-events-none" style="transform: translate(-50%, -40px);">
-        <svg id="pull-refresh-icon" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div id="pull-refresh-indicator" class="fixed top-3 left-1/2 z-40 rounded-full bg-blue-600 text-white shadow-lg flex items-center gap-2 px-4 py-2.5 opacity-0 pointer-events-none" style="transform: translate(-50%, -40px);">
+        <svg id="pull-refresh-icon" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17" />
         </svg>
+        <span id="pull-refresh-text" class="text-[13px] font-bold whitespace-nowrap">당겨서 새로고침</span>
     </div>
 
     <div class="w-full flex flex-col justify-between h-[calc(100vh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))] pt-3 space-y-4">
@@ -454,6 +455,13 @@
             setTimeout(() => {
                 pullIcon.classList.remove("animate-spin");
                 isRefreshing = false;
+
+                // 당겨서 새로고침으로 시작된 경우, 완료 후 인디케이터를 다시 숨기고 문구도 원상복구
+                const indicator = document.getElementById("pull-refresh-indicator");
+                const pullText = document.getElementById("pull-refresh-text");
+                indicator.style.transform = "translate(-50%, -40px)";
+                indicator.style.opacity = "0";
+                pullText.innerText = "당겨서 새로고침";
             }, 1000);
         }
 
@@ -1048,6 +1056,8 @@
         // 당겨서 새로고침: 현재 보이는 화면의 스크롤 위치가 맨 위일 때만 아래로 당기는 제스처를 인식
         function setupPullToRefresh() {
             const indicator = document.getElementById("pull-refresh-indicator");
+            const pullIconEl = document.getElementById("pull-refresh-icon");
+            const pullTextEl = document.getElementById("pull-refresh-text");
             const PULL_THRESHOLD = 70; // 이 거리(px) 이상 당기고 놓으면 새로고침 실행
             const MAX_VISUAL_PULL = 90;
             let startY = 0;
@@ -1083,18 +1093,27 @@
                     return;
                 }
                 const visualPull = Math.min(rawDelta * 0.5, MAX_VISUAL_PULL);
-                indicator.style.transform = `translate(-50%, ${visualPull - 40}px) rotate(${rawDelta}deg)`;
+                indicator.style.transform = `translate(-50%, ${visualPull - 40}px)`;
                 indicator.style.opacity = String(Math.min(1, visualPull / PULL_THRESHOLD));
+                pullIconEl.style.transform = `rotate(${rawDelta}deg)`;
+                pullTextEl.innerText = rawDelta > PULL_THRESHOLD ? "놓으면 새로고침" : "당겨서 새로고침";
                 if (rawDelta > 10) e.preventDefault(); // 당기는 중엔 화면 자체가 딸려 내려가지 않도록
             }, { passive: false });
 
             document.addEventListener("touchend", () => {
                 if (!pulling) return;
                 pulling = false;
-                indicator.style.transform = "translate(-50%, -40px)";
-                indicator.style.opacity = "0";
+                pullIconEl.style.transform = "";
+
                 if (rawDelta > PULL_THRESHOLD && !isRefreshing) {
+                    // 새로고침이 실제로 끝날 때까지 인디케이터를 계속 보여줌 (executeFullUpdate가 숨김 처리함)
+                    indicator.style.transform = "translate(-50%, 12px)";
+                    indicator.style.opacity = "1";
+                    pullTextEl.innerText = "새로고침 중...";
                     executeFullUpdate();
+                } else {
+                    indicator.style.transform = "translate(-50%, -40px)";
+                    indicator.style.opacity = "0";
                 }
                 rawDelta = 0;
             });
