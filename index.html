@@ -104,7 +104,7 @@
             price: null, prevClose: null, changeRate: null, changeAmt: null,
             discrepancy: null, nav: null, volume: null, marketCap: null,
             divAmt: null, divAmtRaw: null, recordDate: null, divTrend: null,
-            rangeHigh: null, rangeLow: null, rangeLabel: null, dailyChart: null, weeklyChart: null
+            rangeHigh: null, rangeLow: null, rangeLabel: null, dailyChart: null
         }));
 
         // 계산기 탭에서 입력한 보유 주식수 (세션 메모리에만 보관 - 새로고침 시에도 값 유지)
@@ -380,19 +380,6 @@
             }
         }
 
-        async function fetchWeeklyChart(itemObj) {
-            try {
-                const res = await fetch(`${MY_SERVER}/api/kis-weekly-chart/${itemObj.ticker}`);
-                if (!res.ok) throw new Error("주봉 조회 서버 오류");
-                const data = await res.json();
-                if (!data.success || !Array.isArray(data.data)) throw new Error("주봉 데이터 없음");
-                itemObj.weeklyChart = data.data;
-            } catch (e) {
-                console.warn(`[${itemObj.ticker}] 주봉 데이터 로드 오류:`, e);
-                itemObj.weeklyChart = null;
-            }
-        }
-
         async function updateSingleItem(itemObj) {
             let priceSuccess = false;
             try {
@@ -408,7 +395,6 @@
                 await fetch52WeekRange(itemObj);
             }
             await fetchDailyChart(itemObj); // 금현물 포함 전 종목 대상
-            await fetchWeeklyChart(itemObj);
 
             return priceSuccess;
         }
@@ -530,11 +516,11 @@
             `;
         }
 
-        // 캔들차트(OHLC) 그리기 - 일봉/주봉 공용 함수
-        function generateCandleChartSvg(candles, label, height = 72) {
+        // 캔들차트(OHLC) 그리기 - 일봉/주봉 공용 함수. 네이버 금융 차트 스타일(격자선+가격축+날짜축)을 참고해서 구성
+        function generateCandleChartSvg(candles, label, height = 92) {
             if (!candles || candles.length < 2) {
                 return `
-                    <div class="w-full bg-slate-100 rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5" style="height:${height}px;">
+                    <div class="w-full bg-white rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5" style="height:${height}px;">
                         <span class="text-[14px] text-slate-500 font-bold">${label} 데이터 대기중</span>
                     </div>
                 `;
@@ -546,15 +532,24 @@
             const maxVal = Math.max(...highs);
             const range = (maxVal - minVal) || 1;
 
-            const W = 300, H = height, PAD_Y = 6;
-            const slotW = W / candles.length;
+            const PAD_TOP = 10, PAD_BOTTOM = 4;
+            const plotH = height - PAD_TOP - PAD_BOTTOM;
+            const chartW = 260; // 오른쪽 가격 라벨 영역을 위해 SVG 자체는 조금 좁게
+            const slotW = chartW / candles.length;
             const bodyW = Math.max(2, slotW * 0.55);
-            const scaleY = (v) => PAD_Y + (1 - (v - minVal) / range) * (H - PAD_Y * 2);
+            const scaleY = (v) => PAD_TOP + (1 - (v - minVal) / range) * plotH;
+
+            // 상단/중단/하단 3단계 격자선 (네이버 차트의 가격 눈금 스타일)
+            const gridLevels = [maxVal, (maxVal + minVal) / 2, minVal];
+            const gridLines = gridLevels.map(v => {
+                const y = scaleY(v);
+                return `<line x1="0" y1="${y.toFixed(1)}" x2="${chartW}" y2="${y.toFixed(1)}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />`;
+            }).join("");
 
             const candleEls = candles.map((c, i) => {
-                const cx = slotW * i + slotW / 2;
+                const cx = i * slotW + slotW / 2;
                 const isUp = c.close >= c.open;
-                const color = isUp ? "#f43f5e" : "#3b82f6"; // 상승(빨강)/하락(파랑) - 국내 관행
+                const color = isUp ? "#e11d48" : "#2563eb"; // 상승(빨강)/하락(파랑) - 국내 관행
                 const yHigh = scaleY(c.high);
                 const yLow = scaleY(c.low);
                 const yOpen = scaleY(c.open);
@@ -568,12 +563,26 @@
                 `;
             }).join("");
 
+            // 가격 라벨은 SVG 밖 HTML로 배치 (SVG를 비율 무시하고 늘려서 그리다 보니 글자가 SVG 안에 있으면 찌그러짐)
+            const priceLabels = gridLevels.map(v => {
+                const yPct = ((scaleY(v) / height) * 100).toFixed(1);
+                return `<span class="absolute text-[8px] text-slate-400" style="top:${yPct}%; right:2px; transform: translateY(-50%);">${formatNumber(Math.round(v))}</span>`;
+            }).join("");
+
+            const fmtDate = (d) => (d && d.length === 8) ? `${d.slice(4, 6)}/${d.slice(6, 8)}` : "";
+            const firstDate = fmtDate(candles[0].date);
+            const lastDate = fmtDate(candles[candles.length - 1].date);
+
             return `
-                <div class="w-full bg-slate-100 rounded-2xl border border-slate-300 mt-1.5 shadow-inner overflow-hidden relative" style="height:${height}px;">
-                    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="w-full h-full">
+                <div class="w-full bg-white rounded-2xl border border-slate-300 mt-1.5 overflow-hidden relative" style="height:${height}px;">
+                    <span class="absolute top-1 left-2 text-[10px] text-slate-500 font-bold z-10 bg-white/80 px-1 rounded">${label}</span>
+                    <svg viewBox="0 0 ${chartW} ${height}" preserveAspectRatio="none" class="absolute top-0 left-0 h-full" style="width: calc(100% - 42px);">
+                        ${gridLines}
                         ${candleEls}
                     </svg>
-                    <span class="absolute top-1 left-2 text-[11px] text-slate-500 font-bold bg-white/70 px-1 rounded">${label} ${candles.length}개</span>
+                    ${priceLabels}
+                    <span class="absolute bottom-0.5 left-2 text-[8px] text-slate-400">${firstDate}</span>
+                    <span class="absolute bottom-0.5 text-[8px] text-slate-400" style="right:44px;">${lastDate}</span>
                 </div>
             `;
         }
@@ -824,8 +833,7 @@
 
                         <div class="space-y-1">
                             ${generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker)}
-                            ${generateCandleChartSvg(itemObj.dailyChart, "일봉", 72)}
-                            ${generateCandleChartSvg(itemObj.weeklyChart, "주봉", 72)}
+                            ${generateCandleChartSvg(itemObj.dailyChart, "일봉", 92)}
                         </div>
 
                         <div class="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 space-y-1 text-[17px] text-slate-500">
