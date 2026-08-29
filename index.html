@@ -517,7 +517,7 @@
         }
 
         // 캔들차트(OHLC) 그리기 - 일봉/주봉 공용 함수. 네이버 금융 차트 스타일(격자선+가격축+날짜축)을 참고해서 구성
-        function generateCandleChartSvg(candles, label, height = 92) {
+        function generateLineChartSvg(candles, label, height = 92) {
             if (!candles || candles.length < 2) {
                 return `
                     <div class="w-full bg-white rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5" style="height:${height}px;">
@@ -526,17 +526,15 @@
                 `;
             }
 
-            const highs = candles.map(c => c.high);
-            const lows = candles.map(c => c.low);
-            const minVal = Math.min(...lows);
-            const maxVal = Math.max(...highs);
+            const closes = candles.map(c => c.close);
+            const minVal = Math.min(...closes);
+            const maxVal = Math.max(...closes);
             const range = (maxVal - minVal) || 1;
 
             const PAD_TOP = 10, PAD_BOTTOM = 4;
             const plotH = height - PAD_TOP - PAD_BOTTOM;
             const chartW = 260; // 오른쪽 가격 라벨 영역을 위해 SVG 자체는 조금 좁게
-            const slotW = chartW / candles.length;
-            const bodyW = Math.max(2, slotW * 0.55);
+            const stepX = chartW / (closes.length - 1);
             const scaleY = (v) => PAD_TOP + (1 - (v - minVal) / range) * plotH;
 
             // 상단/중단/하단 3단계 격자선 (네이버 차트의 가격 눈금 스타일)
@@ -546,22 +544,15 @@
                 return `<line x1="0" y1="${y.toFixed(1)}" x2="${chartW}" y2="${y.toFixed(1)}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />`;
             }).join("");
 
-            const candleEls = candles.map((c, i) => {
-                const cx = i * slotW + slotW / 2;
-                const isUp = c.close >= c.open;
-                const color = isUp ? "#e11d48" : "#2563eb"; // 상승(빨강)/하락(파랑) - 국내 관행
-                const yHigh = scaleY(c.high);
-                const yLow = scaleY(c.low);
-                const yOpen = scaleY(c.open);
-                const yClose = scaleY(c.close);
-                const bodyTop = Math.min(yOpen, yClose);
-                const bodyHeight = Math.max(1, Math.abs(yClose - yOpen));
+            // 전체 기간 시작 대비 마지막 값으로 상승/하락 판단 - 네이버처럼 영역 전체를 한 색으로 채움
+            const isUp = closes[closes.length - 1] >= closes[0];
+            const lineColor = isUp ? "#e11d48" : "#2563eb"; // 상승(빨강)/하락(파랑) - 국내 관행
+            const fillColor = isUp ? "rgba(225,29,72,0.12)" : "rgba(37,99,235,0.12)";
 
-                return `
-                    <line x1="${cx.toFixed(1)}" y1="${yHigh.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yLow.toFixed(1)}" stroke="${color}" stroke-width="1" />
-                    <rect x="${(cx - bodyW / 2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${bodyHeight.toFixed(1)}" fill="${color}" />
-                `;
-            }).join("");
+            const linePoints = closes.map((c, i) => `${(i * stepX).toFixed(1)},${scaleY(c).toFixed(1)}`);
+            const baseY = (height - PAD_BOTTOM).toFixed(1);
+            const areaPath = `M 0,${baseY} L ${linePoints.join(" L ")} L ${chartW},${baseY} Z`;
+            const linePath = `M ${linePoints.join(" L ")}`;
 
             // 가격 라벨은 SVG 밖 HTML로 배치 (SVG를 비율 무시하고 늘려서 그리다 보니 글자가 SVG 안에 있으면 찌그러짐)
             const priceLabels = gridLevels.map(v => {
@@ -578,7 +569,8 @@
                     <span class="absolute top-1 left-2 text-[10px] text-slate-500 font-bold z-10 bg-white/80 px-1 rounded">${label}</span>
                     <svg viewBox="0 0 ${chartW} ${height}" preserveAspectRatio="none" class="absolute top-0 left-0 h-full" style="width: calc(100% - 42px);">
                         ${gridLines}
-                        ${candleEls}
+                        <path d="${areaPath}" fill="${fillColor}" stroke="none" />
+                        <path d="${linePath}" fill="none" stroke="${lineColor}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
                     </svg>
                     ${priceLabels}
                     <span class="absolute bottom-0.5 left-2 text-[8px] text-slate-400">${firstDate}</span>
@@ -833,7 +825,7 @@
 
                         <div class="space-y-1">
                             ${generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker)}
-                            ${generateCandleChartSvg(itemObj.dailyChart, "일봉", 92)}
+                            ${generateLineChartSvg(itemObj.dailyChart, "일봉", 92)}
                         </div>
 
                         <div class="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 space-y-1 text-[17px] text-slate-500">
