@@ -104,7 +104,7 @@
             price: null, prevClose: null, changeRate: null, changeAmt: null,
             discrepancy: null, nav: null, volume: null, marketCap: null,
             divAmt: null, divAmtRaw: null, recordDate: null, divTrend: null,
-            rangeHigh: null, rangeLow: null, rangeLabel: null
+            rangeHigh: null, rangeLow: null, rangeLabel: null, dailyChart: null
         }));
 
         // 계산기 탭에서 입력한 보유 주식수 (세션 메모리에만 보관 - 새로고침 시에도 값 유지)
@@ -366,6 +366,20 @@
             }
         }
 
+        // 최근 20거래일 일봉 종가 조회 (기존 네이버 분봉 이미지와는 별개로, 그 아래에 추가로 표시)
+        async function fetchDailyChart(itemObj) {
+            try {
+                const res = await fetch(`${MY_SERVER}/api/kis-daily-chart/${itemObj.ticker}`);
+                if (!res.ok) throw new Error("일봉 조회 서버 오류");
+                const data = await res.json();
+                if (!data.success || !Array.isArray(data.data)) throw new Error("일봉 데이터 없음");
+                itemObj.dailyChart = data.data; // [{date, close}, ...] 오래된 순 -> 최신 순
+            } catch (e) {
+                console.warn(`[${itemObj.ticker}] 일봉 데이터 로드 오류:`, e);
+                itemObj.dailyChart = null;
+            }
+        }
+
         async function updateSingleItem(itemObj) {
             let priceSuccess = false;
             try {
@@ -380,6 +394,7 @@
                 await fetchDividendData(itemObj);
                 await fetch52WeekRange(itemObj);
             }
+            await fetchDailyChart(itemObj); // 금현물 포함 전 종목 대상
 
             return priceSuccess;
         }
@@ -469,7 +484,7 @@
         function generateHonestTrendSvg(prevClose, price, changeRate, ticker) {
             if (price === null || prevClose === null || isNaN(changeRate)) {
                 return `
-                    <div class="w-full bg-slate-100 rounded-2xl h-[88px] flex items-center justify-center border border-slate-300 mt-1.5">
+                    <div class="w-full bg-slate-100 rounded-2xl h-[68px] flex items-center justify-center border border-slate-300 mt-1.5">
                         <span class="text-[16px] text-slate-500 font-bold">데이터 대기중</span>
                     </div>
                 `;
@@ -485,7 +500,7 @@
             const endY = 50 - trendFactor;
 
             return `
-                <div class="relative w-full bg-slate-100 rounded-2xl border border-slate-300 h-[88px] flex flex-col justify-center items-center mt-1.5 shadow-inner overflow-hidden">
+                <div class="relative w-full bg-slate-100 rounded-2xl border border-slate-300 h-[68px] flex flex-col justify-center items-center mt-1.5 shadow-inner overflow-hidden">
                     <img src="${chartUrl}"
                          alt="실시간 차트"
                          class="absolute inset-0 w-full h-full object-cover opacity-90 transition-opacity duration-300"
@@ -497,6 +512,45 @@
                         <path d="M 0 50 Q 50 ${50 - trendFactor / 2}, 100 ${endY}" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" />
                         <circle cx="100" cy="${endY}" r="4" fill="${strokeColor}" />
                     </svg>
+                </div>
+            `;
+        }
+
+        // 최근 20거래일 일봉 종가로 실제 데이터 기반 선그래프 그리기 (기존 분봉 이미지와 별개, 그 아래에 표시)
+        function generateDailyChartSvg(itemObj) {
+            const chart = itemObj.dailyChart;
+            if (!chart || chart.length < 2) {
+                return `
+                    <div class="w-full bg-slate-100 rounded-2xl h-[60px] flex items-center justify-center border border-slate-300 mt-1.5">
+                        <span class="text-[14px] text-slate-500 font-bold">일봉 데이터 대기중</span>
+                    </div>
+                `;
+            }
+
+            const closes = chart.map(d => d.close);
+            const minClose = Math.min(...closes);
+            const maxClose = Math.max(...closes);
+            const range = maxClose - minClose || 1;
+
+            const W = 300, H = 60, PAD = 6;
+            const stepX = (W - PAD * 2) / (closes.length - 1);
+            const points = closes.map((c, i) => {
+                const x = PAD + i * stepX;
+                const y = PAD + (1 - (c - minClose) / range) * (H - PAD * 2);
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+            });
+
+            const isUp = closes[closes.length - 1] >= closes[0];
+            const strokeColor = isUp ? "#f43f5e" : "#3b82f6";
+            const lastPoint = points[points.length - 1].split(",");
+
+            return `
+                <div class="w-full bg-slate-100 rounded-2xl border border-slate-300 h-[60px] mt-1.5 shadow-inner overflow-hidden relative">
+                    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="w-full h-full">
+                        <polyline points="${points.join(' ')}" fill="none" stroke="${strokeColor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+                        <circle cx="${lastPoint[0]}" cy="${lastPoint[1]}" r="3" fill="${strokeColor}" />
+                    </svg>
+                    <span class="absolute top-1 left-2 text-[11px] text-slate-500 font-bold">일봉 ${chart.length}일</span>
                 </div>
             `;
         }
@@ -747,6 +801,7 @@
 
                         <div class="space-y-1">
                             ${generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker)}
+                            ${generateDailyChartSvg(itemObj)}
                         </div>
 
                         <div class="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 space-y-1 text-[17px] text-slate-500">
