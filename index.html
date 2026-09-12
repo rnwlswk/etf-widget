@@ -126,7 +126,7 @@
             ...item,
             price: null, prevClose: null, changeRate: null, changeAmt: null,
             discrepancy: null, nav: null, volume: null, marketCap: null,
-            divAmt: null, divAmtRaw: null, recordDate: null, divTrend: null,
+            divAmt: null, divAmtRaw: null, recordDate: null, divTrend: null, dividendHistory: null,
             rangeHigh: null, rangeLow: null, rangeLabel: null, dailyChart: null
         }));
 
@@ -352,11 +352,15 @@
                     } else {
                         itemObj.divTrend = null;
                     }
+
+                    // 최근 1년 전체 분배 이력 저장 (탭하면 모달로 보여줌)
+                    itemObj.dividendHistory = Array.isArray(divData.history) ? divData.history : null;
                 } else {
                     itemObj.divAmtRaw = 0;
                     itemObj.divAmt = "0원";
                     itemObj.recordDate = "-";
                     itemObj.divTrend = null;
+                    itemObj.dividendHistory = null;
                 }
             } catch (e) {
                 console.warn(`[${itemObj.ticker}] 분배금 정보 로드 오류:`, e);
@@ -364,6 +368,7 @@
                 itemObj.divAmt = "오류";
                 itemObj.recordDate = "-";
                 itemObj.divTrend = null;
+                itemObj.dividendHistory = null;
             }
         }
 
@@ -623,6 +628,35 @@
             document.getElementById("chart-modal").classList.add("hidden");
         }
 
+        // "주당 분배금" 탭하면 최근 1년 전체 분배 이력을 모달로 보여줌 (기존 차트 모달 재사용)
+        function openDividendHistoryModal(ticker) {
+            const itemObj = ETF_DATABASE.find(i => i.ticker === ticker);
+            if (!itemObj) return;
+
+            const modal = document.getElementById("chart-modal");
+            const content = document.getElementById("chart-modal-content");
+            const title = document.getElementById("chart-modal-title");
+            title.innerText = `${itemObj.name} · 분배금 이력`;
+
+            const history = itemObj.dividendHistory;
+            if (!history || history.length === 0) {
+                content.innerHTML = `<p class="text-[15px] text-slate-500 text-center py-6">분배 이력이 없습니다.</p>`;
+            } else {
+                const rows = history.map(h => {
+                    const d = h.date && h.date.length === 8 ? `${h.date.slice(0,4)}-${h.date.slice(4,6)}-${h.date.slice(6,8)}` : h.date;
+                    return `
+                        <div class="flex justify-between items-center py-2 border-b border-slate-100 last:border-b-0">
+                            <span class="text-[14px] text-slate-500">${d}</span>
+                            <span class="text-[16px] font-bold text-slate-900">${formatNumber(h.amount)}원</span>
+                        </div>
+                    `;
+                }).join("");
+                content.innerHTML = `<div class="max-h-[360px] overflow-y-auto no-scrollbar">${rows}</div>`;
+            }
+
+            modal.classList.remove("hidden");
+        }
+
         // 종목 데이터를 화면 표시용 값으로 가공 (요약/상세 화면 공용)
         function buildDisplayValues(itemObj) {
             const hasValue = itemObj.price !== null;
@@ -816,7 +850,7 @@
             // 분배금/지급일은 카드 맨 아래에 배치 (금 현물은 미출력)
             const divBlock = itemObj.isGold ? '' : `
                 <div class="grid grid-cols-2 gap-3 text-[18px]">
-                    <div class="flex flex-col justify-center items-start bg-slate-50 px-4 py-2 rounded-xl border border-slate-300">
+                    <div onclick="openDividendHistoryModal('${itemObj.ticker}')" class="active-scale cursor-pointer flex flex-col justify-center items-start bg-slate-50 px-4 py-2 rounded-xl border border-slate-300">
                         <span class="text-slate-600 text-[17px] font-bold mb-1">주당 분배금</span>
                         <span class="font-extrabold text-slate-800">${view.displayDivAmt} ${renderDivTrendArrow(itemObj.divTrend)}</span>
                     </div>
@@ -990,7 +1024,7 @@
                 <div class="bg-slate-50 border border-slate-300 rounded-xl p-3 space-y-2">
                     <div class="flex justify-between items-start gap-2">
                         <h4 class="text-[16px] font-bold text-slate-800 truncate">${itemObj.name}</h4>
-                        <div class="text-right shrink-0">
+                        <div onclick="openDividendHistoryModal('${itemObj.ticker}')" class="active-scale cursor-pointer text-right shrink-0">
                             <span class="text-[14px] text-slate-500 block font-bold">이번 분배금(주당)</span>
                             <span class="text-[17px] font-black text-slate-900">${itemObj.divAmt || "대기중"} ${renderDivTrendArrow(itemObj.divTrend)}</span>
                         </div>
