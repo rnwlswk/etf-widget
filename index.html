@@ -151,7 +151,7 @@
             { key: "kospi", name: "코스피 지수" },
             { key: "gold", name: "국제 금(온스당 달러)" },
             { key: "usdkrw", name: "원/달러 환율" }
-        ].map(item => ({ ...item, price: null, previousClose: null, currency: null }));
+        ].map(item => ({ ...item, price: null, previousClose: null, currency: null, dailyChart: null }));
 
         // 상태 점(dot) + 텍스트 스타일 프리셋
         const STATUS_STYLES = {
@@ -445,6 +445,27 @@
             }
         }
 
+        // 글로벌 지수 일봉(최근 20거래일) 조회 - 첫 페이지에서 항목을 누르면 이 데이터로 차트를 보여줌
+        async function fetchGlobalIndexDailyChart(itemObj) {
+            try {
+                const res = await fetch(`${MY_SERVER}/api/global-daily-chart/${itemObj.key}`);
+                if (!res.ok) throw new Error("글로벌 지수 일봉 서버 오류");
+                const data = await res.json();
+                if (!data.success || !Array.isArray(data.data)) throw new Error(data.error || "일봉 데이터 없음");
+                itemObj.dailyChart = data.data;
+            } catch (e) {
+                console.warn(`[${itemObj.key}] 글로벌 지수 일봉 로드 오류:`, e);
+                itemObj.dailyChart = null;
+            }
+        }
+
+        // 글로벌 지수 1건 갱신: 현재가를 먼저 받고, 이어서 일봉 데이터를 순차로 받음
+        async function updateSingleGlobalIndex(itemObj) {
+            const priceSuccess = await fetchGlobalIndex(itemObj);
+            await fetchGlobalIndexDailyChart(itemObj);
+            return priceSuccess;
+        }
+
         // 금현물(KRX) 가격을 국제금(USD/oz) x 환율로 환산해 괴리율 계산
         // 1트로이온스 = 31.1034768g 기준
         function updateGoldDiscrepancy() {
@@ -471,7 +492,7 @@
 
             try {
                 const results = await Promise.all(ETF_DATABASE.map(updateSingleItem));
-                await Promise.all(GLOBAL_INDEX_LIST.map(fetchGlobalIndex));
+                await Promise.all(GLOBAL_INDEX_LIST.map(updateSingleGlobalIndex));
                 updateGoldDiscrepancy();
                 const successCount = results.filter(Boolean).length;
                 const now = new Date().toLocaleTimeString();
@@ -626,6 +647,21 @@
 
         function closeChartModal() {
             document.getElementById("chart-modal").classList.add("hidden");
+        }
+
+        // 첫 페이지(글로벌 지수) 항목을 누르면 일봉 차트 모달 오픈 (기존 차트 모달 재사용)
+        function openGlobalChartModal(key) {
+            const itemObj = GLOBAL_INDEX_LIST.find(i => i.key === key);
+            if (!itemObj) return;
+
+            const modal = document.getElementById("chart-modal");
+            const content = document.getElementById("chart-modal-content");
+            const title = document.getElementById("chart-modal-title");
+
+            title.innerText = `${itemObj.name} · 일봉`;
+            content.innerHTML = generateLineChartSvg(itemObj.dailyChart, "일봉", 260);
+
+            modal.classList.remove("hidden");
         }
 
         // "주당 분배금" 탭하면 최근 1년 전체 분배 이력을 모달로 보여줌 (기존 차트 모달 재사용)
@@ -1166,7 +1202,7 @@
                        <div class="skeleton h-[11px] w-16 ml-auto mt-1"></div>`;
 
                 return `
-                    <div class="bg-white border border-slate-300 border-l-4 ${barColor} rounded-2xl p-2.5 flex justify-between items-center ${didChange ? 'flash-updated' : ''}">
+                    <div onclick="openGlobalChartModal('${itemObj.key}')" class="active-scale cursor-pointer bg-white border border-slate-300 border-l-4 ${barColor} rounded-2xl p-2.5 flex justify-between items-center ${didChange ? 'flash-updated' : ''}">
                         <div class="flex items-center gap-2">
                             <span class="w-2.5 h-2.5 rounded-full ${openDotColor} shrink-0"></span>
                             <span class="text-[19px] font-extrabold text-slate-800">${itemObj.name}</span>
