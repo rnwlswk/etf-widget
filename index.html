@@ -98,14 +98,14 @@
         </div>
     </div>
 
-    <!-- 차트 확대보기 모달 -->
-    <div id="chart-modal" class="hidden fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-5" onclick="if(event.target===this) closeChartModal();">
-        <div class="bg-white rounded-2xl p-4 w-full max-w-md shadow-2xl">
-            <div class="flex justify-between items-center mb-3">
-                <h3 id="chart-modal-title" class="text-[17px] font-black text-slate-900"></h3>
-                <button onclick="closeChartModal()" class="active-scale w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold">✕</button>
+    <!-- 차트 확대보기 모달 - 화면을 최대한 활용하는 바텀시트 형태 -->
+    <div id="chart-modal" class="hidden fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center" onclick="if(event.target===this) closeChartModal();">
+        <div class="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md h-[88vh] sm:h-auto sm:max-h-[88vh] shadow-2xl flex flex-col p-4">
+            <div class="flex justify-between items-center mb-2 shrink-0">
+                <h3 id="chart-modal-title" class="text-[20px] font-black text-slate-900"></h3>
+                <button onclick="closeChartModal()" class="active-scale w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-lg">✕</button>
             </div>
-            <div id="chart-modal-content"></div>
+            <div id="chart-modal-content" class="flex-1 min-h-0 flex flex-col"></div>
         </div>
     </div>
 
@@ -493,17 +493,17 @@
             title.innerText = `${itemObj.name} · 일봉`;
             modal.classList.remove("hidden");
 
-            const toggleHtml = renderGlobalChartRangeToggle(key, range);
+            const toggleHtml = `<div class="shrink-0">${renderGlobalChartRangeToggle(key, range)}</div>`;
             const cached = itemObj.dailyChartCache && itemObj.dailyChartCache[range];
 
             // 이미 받아둔 일봉이 있으면 재요청 없이 바로 표시 (KIS 초당 호출 제한 방지)
             if (cached && cached.length >= 2) {
-                content.innerHTML = toggleHtml + generateLineChartSvg(cached, "일봉", 260);
+                content.innerHTML = toggleHtml + `<div class="flex-1 min-h-0">${generateLineChartSvg(cached, "일봉", 260, true)}</div>`;
                 return;
             }
 
             content.innerHTML = toggleHtml + `
-                <div class="w-full bg-white rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5" style="height:260px;">
+                <div class="flex-1 min-h-0 bg-white rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5">
                     <span class="text-[14px] text-slate-500 font-bold">일봉 불러오는 중...</span>
                 </div>
             `;
@@ -512,7 +512,7 @@
 
             // 로딩되는 사이 사용자가 모달을 닫았거나 다른 항목/기간으로 바꿨으면 반영하지 않음
             if (!modal.classList.contains("hidden") && globalChartActiveKey === key && globalChartActiveRange === range) {
-                content.innerHTML = toggleHtml + generateLineChartSvg(itemObj.dailyChartCache[range], "일봉", 260);
+                content.innerHTML = toggleHtml + `<div class="flex-1 min-h-0">${generateLineChartSvg(itemObj.dailyChartCache[range], "일봉", 260, true)}</div>`;
             }
         }
 
@@ -584,7 +584,7 @@
         }
 
         // 일중 실시간 차트 이미지 (네이버 금융 스니펫 차트 활용)
-        function generateHonestTrendSvg(prevClose, price, changeRate, ticker, height = 60) {
+        function generateHonestTrendSvg(prevClose, price, changeRate, ticker, height = 60, fillParent = false) {
             if (price === null || prevClose === null || isNaN(changeRate)) {
                 return `
                     <div class="w-full bg-slate-100 rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5" style="height:${height}px;">
@@ -601,9 +601,10 @@
             const chartUrl = `https://ssl.pstatic.net/imgfinance/chart/item/area/day/${chartTicker}.png?sidcode=${Date.now()}`;
             const trendFactor = Math.max(-25, Math.min(25, changeRate * 8));
             const endY = 50 - trendFactor;
+            const sizeAttrs = fillParent ? { class: "h-full", style: "" } : { class: "", style: `height:${height}px;` };
 
             return `
-                <div class="relative w-full bg-slate-100 rounded-2xl border border-slate-300 flex flex-col justify-center items-center mt-1.5 shadow-inner overflow-hidden" style="height:${height}px;">
+                <div class="relative w-full bg-slate-100 rounded-2xl border border-slate-300 flex flex-col justify-center items-center mt-1.5 shadow-inner overflow-hidden ${sizeAttrs.class}" style="${sizeAttrs.style}">
                     <img src="${chartUrl}"
                          alt="실시간 차트"
                          class="absolute inset-0 w-full h-full object-cover opacity-90 transition-opacity duration-300"
@@ -619,11 +620,30 @@
             `;
         }
 
+        // 부드러운 곡선 경로 생성 (연속된 점들의 중점을 이어 각진 꺾은선을 완만하게 만듦)
+        function buildSmoothPath(points) {
+            if (points.length < 2) return "";
+            let d = `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
+            for (let i = 1; i < points.length; i++) {
+                const prev = points[i - 1];
+                const curr = points[i];
+                const midX = ((prev.x + curr.x) / 2).toFixed(1);
+                const midY = ((prev.y + curr.y) / 2).toFixed(1);
+                d += ` Q ${prev.x.toFixed(1)},${prev.y.toFixed(1)} ${midX},${midY}`;
+            }
+            const last = points[points.length - 1];
+            d += ` L ${last.x.toFixed(1)},${last.y.toFixed(1)}`;
+            return d;
+        }
+
         // 캔들차트(OHLC) 그리기 - 일봉/주봉 공용 함수. 네이버 금융 차트 스타일(격자선+가격축+날짜축)을 참고해서 구성
-        function generateLineChartSvg(candles, label, height = 92) {
+        // fillParent가 true면 고정 픽셀 높이 대신 부모 요소(모달의 남은 공간)를 꽉 채운다 (height는 내부 비율 계산용으로만 쓰임)
+        function generateLineChartSvg(candles, label, height = 92, fillParent = false) {
+            const sizeAttrs = fillParent ? { class: "h-full", style: "" } : { class: "", style: `height:${height}px;` };
+
             if (!candles || candles.length < 2) {
                 return `
-                    <div class="w-full bg-white rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5" style="height:${height}px;">
+                    <div class="w-full bg-white rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5 ${sizeAttrs.class}" style="${sizeAttrs.style}">
                         <span class="text-[14px] text-slate-500 font-bold">${label} 데이터 대기중</span>
                     </div>
                 `;
@@ -634,9 +654,12 @@
             const maxVal = Math.max(...closes);
             const range = (maxVal - minVal) || 1;
 
-            const PAD_TOP = 10, PAD_BOTTOM = 4;
+            // 위(가격 라벨 칩)/아래(날짜 라벨) 공간을 넉넉히 확보해서 글자가 그래프나 서로와 겹치지 않게 함
+            const PAD_TOP = Math.round(height * 0.09);
+            const PAD_BOTTOM = Math.round(height * 0.14);
             const plotH = height - PAD_TOP - PAD_BOTTOM;
-            const chartW = 260; // 오른쪽 가격 라벨 영역을 위해 SVG 자체는 조금 좁게
+            const chartW = 300;
+            const RIGHT_MARGIN = 54; // 오른쪽 가격 라벨 영역 너비 (기존 42 -> 54로 넓혀 글자가 안 잘리게)
             const stepX = chartW / (closes.length - 1);
             const scaleY = (v) => PAD_TOP + (1 - (v - minVal) / range) * plotH;
 
@@ -644,23 +667,25 @@
             const gridLevels = [maxVal, (maxVal + minVal) / 2, minVal];
             const gridLines = gridLevels.map(v => {
                 const y = scaleY(v);
-                return `<line x1="0" y1="${y.toFixed(1)}" x2="${chartW}" y2="${y.toFixed(1)}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />`;
+                return `<line x1="0" y1="${y.toFixed(1)}" x2="${chartW}" y2="${y.toFixed(1)}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,4" />`;
             }).join("");
 
             // 전체 기간 시작 대비 마지막 값으로 상승/하락 판단 - 네이버처럼 영역 전체를 한 색으로 채움
             const isUp = closes[closes.length - 1] >= closes[0];
             const lineColor = isUp ? "#e11d48" : "#2563eb"; // 상승(빨강)/하락(파랑) - 국내 관행
-            const fillColor = isUp ? "rgba(225,29,72,0.12)" : "rgba(37,99,235,0.12)";
+            const fillColor = isUp ? "rgba(225,29,72,0.14)" : "rgba(37,99,235,0.14)";
 
-            const linePoints = closes.map((c, i) => `${(i * stepX).toFixed(1)},${scaleY(c).toFixed(1)}`);
-            const baseY = (height - PAD_BOTTOM).toFixed(1);
-            const areaPath = `M 0,${baseY} L ${linePoints.join(" L ")} L ${chartW},${baseY} Z`;
-            const linePath = `M ${linePoints.join(" L ")}`;
+            const points = closes.map((c, i) => ({ x: i * stepX, y: scaleY(c) }));
+            const baseY = height - PAD_BOTTOM;
+            const smoothLine = buildSmoothPath(points);
+            const curveOnly = smoothLine.substring(smoothLine.indexOf("Q")); // "M x0,y0" 시작부만 떼고 곡선 명령만 재사용
+            const areaPath = `M 0,${baseY.toFixed(1)} L ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)} ${curveOnly} L ${chartW},${baseY.toFixed(1)} Z`;
 
             // 가격 라벨은 SVG 밖 HTML로 배치 (SVG를 비율 무시하고 늘려서 그리다 보니 글자가 SVG 안에 있으면 찌그러짐)
+            // 배경 칩(bg-white)을 둬서 격자선/채움색 위에서도 잘 보이게 함
             const priceLabels = gridLevels.map(v => {
                 const yPct = ((scaleY(v) / height) * 100).toFixed(1);
-                return `<span class="absolute text-[8px] text-slate-400" style="top:${yPct}%; right:2px; transform: translateY(-50%);">${formatNumber(Math.round(v))}</span>`;
+                return `<span class="absolute text-[12px] font-bold text-slate-600 bg-white/95 px-1 rounded" style="top:${yPct}%; right:3px; transform: translateY(-50%);">${formatNumber(Math.round(v))}</span>`;
             }).join("");
 
             const fmtDate = (d) => (d && d.length === 8) ? `${d.slice(4, 6)}/${d.slice(6, 8)}` : "";
@@ -668,16 +693,16 @@
             const lastDate = fmtDate(candles[candles.length - 1].date);
 
             return `
-                <div class="w-full bg-white rounded-2xl border border-slate-300 mt-1.5 overflow-hidden relative" style="height:${height}px;">
-                    <span class="absolute top-1 left-2 text-[10px] text-slate-500 font-bold z-10 bg-white/80 px-1 rounded">${label}</span>
-                    <svg viewBox="0 0 ${chartW} ${height}" preserveAspectRatio="none" class="absolute top-0 left-0 h-full" style="width: calc(100% - 42px);">
+                <div class="w-full bg-white rounded-2xl border border-slate-300 mt-1.5 overflow-hidden relative ${sizeAttrs.class}" style="${sizeAttrs.style}">
+                    <span class="absolute top-2 left-2.5 text-[12px] text-slate-500 font-bold z-10 bg-white/90 px-1.5 py-0.5 rounded">${label}</span>
+                    <svg viewBox="0 0 ${chartW} ${height}" preserveAspectRatio="none" class="absolute top-0 left-0 h-full" style="width: calc(100% - ${RIGHT_MARGIN}px);">
                         ${gridLines}
                         <path d="${areaPath}" fill="${fillColor}" stroke="none" />
-                        <path d="${linePath}" fill="none" stroke="${lineColor}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+                        <path d="${smoothLine}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
                     </svg>
                     ${priceLabels}
-                    <span class="absolute bottom-0.5 left-2 text-[8px] text-slate-400">${firstDate}</span>
-                    <span class="absolute bottom-0.5 text-[8px] text-slate-400" style="right:44px;">${lastDate}</span>
+                    <span class="absolute bottom-2 left-2.5 text-[12px] font-bold text-slate-500 bg-white/90 px-1 rounded">${firstDate}</span>
+                    <span class="absolute bottom-2 text-[12px] font-bold text-slate-500 bg-white/90 px-1 rounded" style="right:${RIGHT_MARGIN + 4}px;">${lastDate}</span>
                 </div>
             `;
         }
@@ -693,8 +718,8 @@
 
             title.innerText = `${itemObj.name} · ${type === "daily" ? "일봉" : "분봉"}`;
             content.innerHTML = type === "daily"
-                ? generateLineChartSvg(itemObj.dailyChart, "일봉", 260)
-                : generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker, 260);
+                ? generateLineChartSvg(itemObj.dailyChart, "일봉", 260, true)
+                : generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker, 260, true);
 
             modal.classList.remove("hidden");
         }
