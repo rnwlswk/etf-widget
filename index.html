@@ -113,6 +113,68 @@
         // 백엔드 프록시 서버 주소 (배포된 Render 서버 URL)
         const MY_SERVER = "https://kis-proxy-server-k0g3.onrender.com";
 
+        // 국내 정규장 시간(평일 09:00~15:30 KST) 여부 - 공휴일까지는 반영 못함(달력 데이터 없음), 주말/시간대만 체크
+        // 서버(KIS 휴장일조회 API)에서 받아온 "오늘이 실제 개장일인지" 캐시
+        // null = 아직 확인 전(주말/시간대 체크만으로 판단), true/false = 확인 완료
+        let isTodayTradingDayCache = null;
+
+        async function refreshTradingDayStatus() {
+            try {
+                const res = await fetch(`${MY_SERVER}/api/is-trading-day`);
+                const data = await res.json();
+                if (data.success) {
+                    isTodayTradingDayCache = data.isTradingDay;
+                }
+            } catch (e) {
+                console.warn("휴장일 조회 오류:", e); // 실패하면 그냥 요일/시간 체크만으로 동작 (fail-open)
+            }
+        }
+
+        function isRegularMarketHoursNow() {
+            if (isTodayTradingDayCache === false) return false; // 임시공휴일 등 KIS가 휴장으로 확인해준 날
+
+            const parts = new Intl.DateTimeFormat("en-US", {
+                timeZone: "Asia/Seoul", hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit"
+            }).formatToParts(new Date());
+            const get = (type) => parts.find(p => p.type === type).value;
+            const weekday = get("weekday");
+            if (weekday === "Sat" || weekday === "Sun") return false;
+
+            const totalMin = parseInt(get("hour"), 10) * 60 + parseInt(get("minute"), 10);
+            return totalMin >= 9 * 60 && totalMin <= 15 * 60 + 30;
+        }
+
+        // 종목 하나의 당일 분봉을 가져온다. 이미 캐시돼 있으면 그대로 반환하고,
+        // 이미 같은 종목을 불러오는 중이면(상세카드 미리보기 로딩과 모달 오픈이 겹치는 경우 등)
+        // 새로 요청을 또 보내지 않고 진행 중이던 그 요청 결과를 같이 기다린다 (중복 호출 방지)
+        async function ensureMinuteChartLoaded(itemObj) {
+            if (itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2) {
+                return itemObj.minuteChartCache;
+            }
+            if (itemObj.minuteChartLoadingPromise) {
+                return itemObj.minuteChartLoadingPromise;
+            }
+
+            itemObj.minuteChartLoadingPromise = (async () => {
+                try {
+                    const res = await fetch(`${MY_SERVER}/api/kis-minute-chart/${itemObj.ticker}`);
+                    const data = await res.json();
+                    if (data.success && Array.isArray(data.data) && data.data.length >= 2) {
+                        itemObj.minuteChartCache = data.data;
+                        return data.data;
+                    }
+                    return null;
+                } catch (e) {
+                    console.warn(`[${itemObj.ticker}] 분봉 로드 오류:`, e);
+                    return null;
+                } finally {
+                    itemObj.minuteChartLoadingPromise = null;
+                }
+            })();
+
+            return itemObj.minuteChartLoadingPromise;
+        }
+
         // 종목 데이터베이스 (분배율 필드는 제외, 분배금/지급일은 유지)
         const ETF_DATABASE = [
             { id: "TIGER_NSQ100_DAILY_CC", name: "TIGER 미국나스닥100타겟데일리커버드콜", ticker: "486290", isGold: false },
@@ -217,28 +279,20 @@
         // (전체 종목을 새로고침마다 다 부르면 KIS 호출이 너무 많아지므로, 실제로 보고 있는 것만 지연 로딩)
         // 중간 미리보기(선그래프/30분치) 없이, 당일 전체 분봉이 완성되면 그때 한 번에 보여준다
         async function maybeLoadIntradayThumb(slideIndex) {
+            if (!isRegularMarketHoursNow()) return; // 정규장(09:00~15:30) 아니면 아예 호출하지 않음
+
             const orderedItems = getOrderedItems();
             const itemIndex = slideIndex - 2; // 0=글로벌지수, 1=요약, 2..=종목 상세
             if (itemIndex < 0 || itemIndex >= orderedItems.length) return;
 
             const itemObj = orderedItems[itemIndex];
-            if (!itemObj || itemObj.minuteChartCache || itemObj.minuteChartLoading) return; // 이미 로드됐거나 로딩 중이면 스킵
-            itemObj.minuteChartLoading = true;
+            if (!itemObj || (itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2)) return; // 이미 로드됐으면 스킵
 
             const thumbId = `intraday-thumb-${itemObj.ticker}`;
-
-            try {
-                const res = await fetch(`${MY_SERVER}/api/kis-minute-chart/${itemObj.ticker}`);
-                const data = await res.json();
-                if (data.success && Array.isArray(data.data) && data.data.length >= 2) {
-                    itemObj.minuteChartCache = data.data;
-                    const thumbEl = document.getElementById(thumbId);
-                    if (thumbEl) thumbEl.innerHTML = generateCandleChartSvg(data.data, "분봉", 60);
-                }
-            } catch (e) {
-                console.warn(`[${itemObj.ticker}] 분봉 썸네일 로드 오류:`, e);
-            } finally {
-                itemObj.minuteChartLoading = false;
+            const data = await ensureMinuteChartLoaded(itemObj);
+            if (data) {
+                const thumbEl = document.getElementById(thumbId);
+                if (thumbEl) thumbEl.innerHTML = generateCandleChartSvg(data, "분봉", 60);
             }
         }
 
@@ -779,35 +833,45 @@
 
             intradayActiveTicker = ticker;
             title.innerText = `${itemObj.name} · 분봉`;
+
+            // 상세카드 미리보기에서 이미 당일 분봉을 받아둔 상태라면, 그걸 그대로 확대해서 보여줄 뿐 다시 부를 필요 없음
+            if (itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2) {
+                content.innerHTML = generateCandleChartSvg(itemObj.minuteChartCache, "분봉", 260, true);
+                return;
+            }
+
+            // 정규장(09:00~15:30) 시간이 아니면 새로 불러오지 않음 - 장 마감 후에도 계속 값이 이어붙는 문제 방지
+            if (!isRegularMarketHoursNow()) {
+                content.innerHTML = generateCandleChartSvg(null, "정규장(09:00~15:30)에만 제공", 260, true);
+                return;
+            }
+
             content.innerHTML = `
                 <div class="w-full h-full bg-white rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5">
                     <span class="text-[14px] text-slate-500 font-bold">분봉 불러오는 중...</span>
                 </div>
             `;
 
-            // 1단계: 최근 구간만 빠르게 받아서 먼저 보여줌 (체감 속도 개선용, 호출 1번이라 거의 즉시 뜸)
-            try {
-                const quickRes = await fetch(`${MY_SERVER}/api/kis-minute-chart/${ticker}?quick=1`);
-                const quickData = await quickRes.json();
-                if (quickData.success && Array.isArray(quickData.data) && quickData.data.length >= 2
-                    && !modal.classList.contains("hidden") && intradayActiveTicker === ticker) {
-                    content.innerHTML = generateCandleChartSvg(quickData.data, "분봉(최근)", 260, true);
+            // 최근 구간만 빠르게 받아서 먼저 보여줌 (체감 속도 개선용) - 단, 이미 다른 곳(상세카드 미리보기 등)에서
+            // 같은 종목 전체 분봉을 불러오는 중이면 굳이 별도로 또 부르지 않고 그 결과를 그냥 기다림
+            if (!itemObj.minuteChartLoadingPromise) {
+                try {
+                    const quickRes = await fetch(`${MY_SERVER}/api/kis-minute-chart/${ticker}?quick=1`);
+                    const quickData = await quickRes.json();
+                    if (quickData.success && Array.isArray(quickData.data) && quickData.data.length >= 2
+                        && !modal.classList.contains("hidden") && intradayActiveTicker === ticker) {
+                        content.innerHTML = generateCandleChartSvg(quickData.data, "분봉(최근)", 260, true);
+                    }
+                } catch (e) {
+                    console.warn(`[${ticker}] 분봉 빠른조회 오류:`, e); // 실패해도 아래 전체 조회에서 재시도되므로 무시
                 }
-            } catch (e) {
-                console.warn(`[${ticker}] 분봉 빠른조회 오류:`, e); // 실패해도 아래 전체 조회에서 재시도되므로 무시
             }
 
-            // 2단계: 당일 전체 분봉을 이어서 받아와 교체
-            let minuteData = null;
-            try {
-                const res = await fetch(`${MY_SERVER}/api/kis-minute-chart/${ticker}`);
-                if (!res.ok) throw new Error("분봉 서버 오류");
-                const data = await res.json();
-                if (!data.success || !Array.isArray(data.data)) throw new Error(data.error || "분봉 데이터 없음");
-                minuteData = data.data;
-            } catch (e) {
-                console.warn(`[${ticker}] 분봉 로드 오류:`, e);
-            }
+            // 당일 전체 분봉을 이어서 받아와 교체 - 진행 중인 요청이 있으면 새로 안 부르고 그 결과를 같이 기다림 (중복 호출 방지)
+            const minuteData = await ensureMinuteChartLoaded(itemObj);
+
+            const thumbEl = document.getElementById(`intraday-thumb-${ticker}`);
+            if (thumbEl && minuteData) thumbEl.innerHTML = generateCandleChartSvg(minuteData, "분봉", 60);
 
             // 로딩되는 사이 모달을 닫았거나 다른 종목/탭으로 바꿨으면 반영하지 않음
             if (!modal.classList.contains("hidden") && intradayActiveTicker === ticker) {
@@ -1105,7 +1169,7 @@
                                 <div id="intraday-thumb-${itemObj.ticker}">
                                     ${(itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2)
                                         ? generateCandleChartSvg(itemObj.minuteChartCache, "분봉", 60)
-                                        : generateCandleChartSvg(null, "분봉", 60)}
+                                        : generateCandleChartSvg(null, isRegularMarketHoursNow() ? "분봉" : "정규장에만 제공", 60)}
                                 </div>
                             </div>
                             <div onclick="openChartModal('daily', '${itemObj.ticker}')" class="active-scale cursor-pointer">
@@ -1405,8 +1469,8 @@
             summaryContainer.innerHTML = "";
             slider.innerHTML = ""; // summarySlide는 JS 참조로 이미 잡아뒀으므로 재부착 가능
 
-            slider.appendChild(renderGlobalIndexSlide()); // 1번째: 글로벌 지수
-            slider.appendChild(summarySlide);              // 2번째: 요약(금+ETF 현재가) 리스트
+            slider.appendChild(summarySlide);              // 1번째: 요약(금+ETF 현재가) 리스트
+            slider.appendChild(renderGlobalIndexSlide()); // 2번째: 글로벌 지수
 
             getOrderedItems().forEach((itemObj, index) => {
                 const view = buildDisplayValues(itemObj);
@@ -1503,6 +1567,14 @@
         window.onload = function() {
             renderApp();
             setupPullToRefresh();
+            refreshTradingDayStatus(); // 오늘이 임시공휴일 등으로 실제 휴장인지 KIS에 확인
+
+            // 새로고침 시 브라우저가 스크롤 위치를 기억해서 엉뚱한 슬라이드로 열리는 경우가 있어, 항상 첫 번째 슬라이드로 고정
+            const slider = document.getElementById("main-slider");
+            slider.scrollLeft = 0;
+            currentSlide = 0;
+            updateDots();
+
             setTimeout(() => { executeFullUpdate(); }, 300);
         };
     </script>
