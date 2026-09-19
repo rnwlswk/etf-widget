@@ -215,6 +215,7 @@
 
         // 지금 화면에 보이는 슬라이드가 종목 상세라면, 그 종목의 실제 분봉만 딱 1번 불러와서 미리보기를 채워넣음
         // (전체 종목을 새로고침마다 다 부르면 KIS 호출이 너무 많아지므로, 실제로 보고 있는 것만 지연 로딩)
+        // 중간 미리보기(선그래프/30분치) 없이, 당일 전체 분봉이 완성되면 그때 한 번에 보여준다
         async function maybeLoadIntradayThumb(slideIndex) {
             const orderedItems = getOrderedItems();
             const itemIndex = slideIndex - 2; // 0=글로벌지수, 1=요약, 2..=종목 상세
@@ -226,19 +227,6 @@
 
             const thumbId = `intraday-thumb-${itemObj.ticker}`;
 
-            // 1단계: 최근 구간만 빠르게 받아서 미리보기 먼저 갱신
-            try {
-                const quickRes = await fetch(`${MY_SERVER}/api/kis-minute-chart/${itemObj.ticker}?quick=1`);
-                const quickData = await quickRes.json();
-                const thumbEl = document.getElementById(thumbId);
-                if (quickData.success && Array.isArray(quickData.data) && quickData.data.length >= 2 && thumbEl) {
-                    thumbEl.innerHTML = generateCandleChartSvg(quickData.data, "분봉", 60);
-                }
-            } catch (e) {
-                console.warn(`[${itemObj.ticker}] 분봉 썸네일 빠른조회 오류:`, e);
-            }
-
-            // 2단계: 당일 전체로 교체 + 캐시 (같은 세션에서 이 슬라이드 다시 봐도 재요청 안 하게)
             try {
                 const res = await fetch(`${MY_SERVER}/api/kis-minute-chart/${itemObj.ticker}`);
                 const data = await res.json();
@@ -1117,7 +1105,7 @@
                                 <div id="intraday-thumb-${itemObj.ticker}">
                                     ${(itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2)
                                         ? generateCandleChartSvg(itemObj.minuteChartCache, "분봉", 60)
-                                        : generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker)}
+                                        : generateCandleChartSvg(null, "분봉", 60)}
                                 </div>
                             </div>
                             <div onclick="openChartModal('daily', '${itemObj.ticker}')" class="active-scale cursor-pointer">
