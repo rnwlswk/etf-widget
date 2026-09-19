@@ -200,6 +200,7 @@
             slider.scrollTo({ left: slider.clientWidth * index, behavior: "smooth" });
             currentSlide = index;
             updateDots();
+            maybeLoadIntradayThumb(currentSlide);
         }
 
         function handleSliderScroll() {
@@ -208,6 +209,48 @@
             if (currentSlide !== index) {
                 currentSlide = index;
                 updateDots();
+                maybeLoadIntradayThumb(currentSlide);
+            }
+        }
+
+        // 지금 화면에 보이는 슬라이드가 종목 상세라면, 그 종목의 실제 분봉만 딱 1번 불러와서 미리보기를 채워넣음
+        // (전체 종목을 새로고침마다 다 부르면 KIS 호출이 너무 많아지므로, 실제로 보고 있는 것만 지연 로딩)
+        async function maybeLoadIntradayThumb(slideIndex) {
+            const orderedItems = getOrderedItems();
+            const itemIndex = slideIndex - 2; // 0=글로벌지수, 1=요약, 2..=종목 상세
+            if (itemIndex < 0 || itemIndex >= orderedItems.length) return;
+
+            const itemObj = orderedItems[itemIndex];
+            if (!itemObj || itemObj.minuteChartCache || itemObj.minuteChartLoading) return; // 이미 로드됐거나 로딩 중이면 스킵
+            itemObj.minuteChartLoading = true;
+
+            const thumbId = `intraday-thumb-${itemObj.ticker}`;
+
+            // 1단계: 최근 구간만 빠르게 받아서 미리보기 먼저 갱신
+            try {
+                const quickRes = await fetch(`${MY_SERVER}/api/kis-minute-chart/${itemObj.ticker}?quick=1`);
+                const quickData = await quickRes.json();
+                const thumbEl = document.getElementById(thumbId);
+                if (quickData.success && Array.isArray(quickData.data) && quickData.data.length >= 2 && thumbEl) {
+                    thumbEl.innerHTML = generateCandleChartSvg(quickData.data, "분봉", 60);
+                }
+            } catch (e) {
+                console.warn(`[${itemObj.ticker}] 분봉 썸네일 빠른조회 오류:`, e);
+            }
+
+            // 2단계: 당일 전체로 교체 + 캐시 (같은 세션에서 이 슬라이드 다시 봐도 재요청 안 하게)
+            try {
+                const res = await fetch(`${MY_SERVER}/api/kis-minute-chart/${itemObj.ticker}`);
+                const data = await res.json();
+                if (data.success && Array.isArray(data.data) && data.data.length >= 2) {
+                    itemObj.minuteChartCache = data.data;
+                    const thumbEl = document.getElementById(thumbId);
+                    if (thumbEl) thumbEl.innerHTML = generateCandleChartSvg(data.data, "분봉", 60);
+                }
+            } catch (e) {
+                console.warn(`[${itemObj.ticker}] 분봉 썸네일 로드 오류:`, e);
+            } finally {
+                itemObj.minuteChartLoading = false;
             }
         }
 
@@ -754,6 +797,19 @@
                 </div>
             `;
 
+            // 1단계: 최근 구간만 빠르게 받아서 먼저 보여줌 (체감 속도 개선용, 호출 1번이라 거의 즉시 뜸)
+            try {
+                const quickRes = await fetch(`${MY_SERVER}/api/kis-minute-chart/${ticker}?quick=1`);
+                const quickData = await quickRes.json();
+                if (quickData.success && Array.isArray(quickData.data) && quickData.data.length >= 2
+                    && !modal.classList.contains("hidden") && intradayActiveTicker === ticker) {
+                    content.innerHTML = generateCandleChartSvg(quickData.data, "분봉(최근)", 260, true);
+                }
+            } catch (e) {
+                console.warn(`[${ticker}] 분봉 빠른조회 오류:`, e); // 실패해도 아래 전체 조회에서 재시도되므로 무시
+            }
+
+            // 2단계: 당일 전체 분봉을 이어서 받아와 교체
             let minuteData = null;
             try {
                 const res = await fetch(`${MY_SERVER}/api/kis-minute-chart/${ticker}`);
@@ -1058,7 +1114,11 @@
 
                         <div class="space-y-1">
                             <div onclick="openChartModal('intraday', '${itemObj.ticker}')" class="active-scale cursor-pointer">
-                                ${generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker)}
+                                <div id="intraday-thumb-${itemObj.ticker}">
+                                    ${(itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2)
+                                        ? generateCandleChartSvg(itemObj.minuteChartCache, "분봉", 60)
+                                        : generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker)}
+                                </div>
                             </div>
                             <div onclick="openChartModal('daily', '${itemObj.ticker}')" class="active-scale cursor-pointer">
                                 ${generateCandleChartSvg(itemObj.dailyChart, "일봉", 60)}
@@ -1373,6 +1433,7 @@
             slider.removeEventListener("scroll", handleSliderScroll);
             slider.addEventListener("scroll", handleSliderScroll);
             updateDots();
+            maybeLoadIntradayThumb(currentSlide); // 새로고침 시점에 이미 종목 상세 슬라이드를 보고 있었다면 바로 로드
         }
 
         // 당겨서 새로고침: 현재 보이는 화면의 스크롤 위치가 맨 위일 때만 아래로 당기는 제스처를 인식
