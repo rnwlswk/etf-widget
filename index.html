@@ -144,6 +144,38 @@
             return totalMin >= 9 * 60 && totalMin <= 15 * 60 + 30;
         }
 
+        // 분봉을 지금 불러와도 되는지 여부. 서버 필터가 15:30 상한을 걸어주므로 장마감 후에도
+        // 그날 완성된 분봉을 그대로 안전하게 보여줄 수 있어서, 09:00 이전(아직 데이터가 없음)과
+        // 확인된 휴장일/주말만 막는다 (KIS 분봉 API는 "당일" 전용이라 전날 데이터로 대체할 수는 없음)
+        function canFetchIntradayNow() {
+            if (isTodayTradingDayCache === false) return false;
+
+            const parts = new Intl.DateTimeFormat("en-US", {
+                timeZone: "Asia/Seoul", hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit"
+            }).formatToParts(new Date());
+            const get = (type) => parts.find(p => p.type === type).value;
+            const weekday = get("weekday");
+            if (weekday === "Sat" || weekday === "Sun") return false;
+
+            const totalMin = parseInt(get("hour"), 10) * 60 + parseInt(get("minute"), 10);
+            return totalMin >= 9 * 60;
+        }
+
+        // 분봉을 못 불러오는 상태일 때 보여줄 안내 문구
+        function intradayUnavailableLabel() {
+            if (!canFetchIntradayNow()) {
+                const parts = new Intl.DateTimeFormat("en-US", {
+                    timeZone: "Asia/Seoul", hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit"
+                }).formatToParts(new Date());
+                const get = (type) => parts.find(p => p.type === type).value;
+                const weekday = get("weekday");
+                const totalMin = parseInt(get("hour"), 10) * 60 + parseInt(get("minute"), 10);
+                if (isTodayTradingDayCache === false || weekday === "Sat" || weekday === "Sun") return "휴장일";
+                if (totalMin < 9 * 60) return "장 시작 전";
+            }
+            return "분봉";
+        }
+
         // 종목 하나의 당일 분봉을 가져온다. 이미 캐시돼 있으면 그대로 반환하고,
         // 이미 같은 종목을 불러오는 중이면(상세카드 미리보기 로딩과 모달 오픈이 겹치는 경우 등)
         // 새로 요청을 또 보내지 않고 진행 중이던 그 요청 결과를 같이 기다린다 (중복 호출 방지)
@@ -279,7 +311,7 @@
         // (전체 종목을 새로고침마다 다 부르면 KIS 호출이 너무 많아지므로, 실제로 보고 있는 것만 지연 로딩)
         // 중간 미리보기(선그래프/30분치) 없이, 당일 전체 분봉이 완성되면 그때 한 번에 보여준다
         async function maybeLoadIntradayThumb(slideIndex) {
-            if (!isRegularMarketHoursNow()) return; // 정규장(09:00~15:30) 아니면 아예 호출하지 않음
+            if (!canFetchIntradayNow()) return; // 09:00 이전이거나 확인된 휴장일이면 호출하지 않음
 
             const orderedItems = getOrderedItems();
             const itemIndex = slideIndex - 2; // 0=글로벌지수, 1=요약, 2..=종목 상세
@@ -840,9 +872,9 @@
                 return;
             }
 
-            // 정규장(09:00~15:30) 시간이 아니면 새로 불러오지 않음 - 장 마감 후에도 계속 값이 이어붙는 문제 방지
-            if (!isRegularMarketHoursNow()) {
-                content.innerHTML = generateCandleChartSvg(null, "정규장(09:00~15:30)에만 제공", 260, true);
+            // 09:00 이전이거나 확인된 휴장일/주말이면 새로 불러오지 않음 (KIS 분봉 API가 당일 전용이라 전날 대체 불가)
+            if (!canFetchIntradayNow()) {
+                content.innerHTML = generateCandleChartSvg(null, intradayUnavailableLabel(), 260, true);
                 return;
             }
 
@@ -1169,7 +1201,7 @@
                                 <div id="intraday-thumb-${itemObj.ticker}">
                                     ${(itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2)
                                         ? generateCandleChartSvg(itemObj.minuteChartCache, "분봉", 60)
-                                        : generateCandleChartSvg(null, isRegularMarketHoursNow() ? "분봉" : "정규장에만 제공", 60)}
+                                        : generateCandleChartSvg(null, intradayUnavailableLabel(), 60)}
                                 </div>
                             </div>
                             <div onclick="openChartModal('daily', '${itemObj.ticker}')" class="active-scale cursor-pointer">
