@@ -151,7 +151,7 @@
             { key: "kospi", name: "코스피 지수" },
             { key: "gold", name: "국제 금(온스당 달러)" },
             { key: "usdkrw", name: "원/달러 환율" }
-        ].map(item => ({ ...item, price: null, previousClose: null, currency: null, dailyChart: null }));
+        ].map(item => ({ ...item, price: null, previousClose: null, currency: null, dailyChartCache: {} }));
 
         // 상태 점(dot) + 텍스트 스타일 프리셋
         const STATUS_STYLES = {
@@ -445,25 +445,79 @@
             }
         }
 
-        // 글로벌 지수 일봉(최근 20거래일) 조회 - 첫 페이지에서 항목을 누르면 이 데이터로 차트를 보여줌
-        async function fetchGlobalIndexDailyChart(itemObj) {
+        // 글로벌 지수 일봉 조회 - 첫 페이지에서 항목을 눌렀을 때만, 선택된 기간(1개월/1년)만 호출한다
+        // (전체 새로고침 때 6개 지수분을 한꺼번에 미리 받으면 KIS 초당 호출 제한(EGW00201)에 걸리기 쉬워서,
+        //  탭한 순간에만 요청하는 지연 로딩 방식으로 전환했고, 기간별로 캐시해서 다시 볼 땐 재요청 안 함)
+        async function fetchGlobalIndexDailyChart(itemObj, range) {
             try {
-                const res = await fetch(`${MY_SERVER}/api/global-daily-chart/${itemObj.key}`);
+                const res = await fetch(`${MY_SERVER}/api/global-daily-chart/${itemObj.key}?range=${range}`);
                 if (!res.ok) throw new Error("글로벌 지수 일봉 서버 오류");
                 const data = await res.json();
                 if (!data.success || !Array.isArray(data.data)) throw new Error(data.error || "일봉 데이터 없음");
-                itemObj.dailyChart = data.data;
+                if (!itemObj.dailyChartCache) itemObj.dailyChartCache = {};
+                itemObj.dailyChartCache[range] = data.data;
             } catch (e) {
-                console.warn(`[${itemObj.key}] 글로벌 지수 일봉 로드 오류:`, e);
-                itemObj.dailyChart = null;
+                console.warn(`[${itemObj.key}] 글로벌 지수 일봉(${range}) 로드 오류:`, e);
+                if (!itemObj.dailyChartCache) itemObj.dailyChartCache = {};
+                itemObj.dailyChartCache[range] = null;
             }
         }
 
-        // 글로벌 지수 1건 갱신: 현재가를 먼저 받고, 이어서 일봉 데이터를 순차로 받음
-        async function updateSingleGlobalIndex(itemObj) {
-            const priceSuccess = await fetchGlobalIndex(itemObj);
-            await fetchGlobalIndexDailyChart(itemObj);
-            return priceSuccess;
+        let globalChartActiveKey = null;
+        let globalChartActiveRange = "1m";
+
+        function renderGlobalChartRangeToggle(key, activeRange) {
+            const btn = (range, label) => `
+                <button onclick="switchGlobalChartRange('${key}', '${range}')"
+                    class="text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${activeRange === range ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-300'}">
+                    ${label}
+                </button>`;
+            return `<div class="flex gap-1.5 justify-end px-1 pb-1">${btn("1m", "1개월")}${btn("1y", "1년")}</div>`;
+        }
+
+        async function switchGlobalChartRange(key, range) {
+            await renderGlobalChartModal(key, range);
+        }
+
+        async function renderGlobalChartModal(key, range) {
+            const itemObj = GLOBAL_INDEX_LIST.find(i => i.key === key);
+            if (!itemObj) return;
+
+            globalChartActiveKey = key;
+            globalChartActiveRange = range;
+
+            const modal = document.getElementById("chart-modal");
+            const content = document.getElementById("chart-modal-content");
+            const title = document.getElementById("chart-modal-title");
+
+            title.innerText = `${itemObj.name} · 일봉`;
+            modal.classList.remove("hidden");
+
+            const toggleHtml = renderGlobalChartRangeToggle(key, range);
+            const cached = itemObj.dailyChartCache && itemObj.dailyChartCache[range];
+
+            // 이미 받아둔 일봉이 있으면 재요청 없이 바로 표시 (KIS 초당 호출 제한 방지)
+            if (cached && cached.length >= 2) {
+                content.innerHTML = toggleHtml + generateLineChartSvg(cached, "일봉", 260);
+                return;
+            }
+
+            content.innerHTML = toggleHtml + `
+                <div class="w-full bg-white rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5" style="height:260px;">
+                    <span class="text-[14px] text-slate-500 font-bold">일봉 불러오는 중...</span>
+                </div>
+            `;
+
+            await fetchGlobalIndexDailyChart(itemObj, range);
+
+            // 로딩되는 사이 사용자가 모달을 닫았거나 다른 항목/기간으로 바꿨으면 반영하지 않음
+            if (!modal.classList.contains("hidden") && globalChartActiveKey === key && globalChartActiveRange === range) {
+                content.innerHTML = toggleHtml + generateLineChartSvg(itemObj.dailyChartCache[range], "일봉", 260);
+            }
+        }
+
+        async function openGlobalChartModal(key) {
+            await renderGlobalChartModal(key, "1m");
         }
 
         // 금현물(KRX) 가격을 국제금(USD/oz) x 환율로 환산해 괴리율 계산
@@ -492,7 +546,7 @@
 
             try {
                 const results = await Promise.all(ETF_DATABASE.map(updateSingleItem));
-                await Promise.all(GLOBAL_INDEX_LIST.map(updateSingleGlobalIndex));
+                await Promise.all(GLOBAL_INDEX_LIST.map(fetchGlobalIndex));
                 updateGoldDiscrepancy();
                 const successCount = results.filter(Boolean).length;
                 const now = new Date().toLocaleTimeString();
@@ -647,21 +701,6 @@
 
         function closeChartModal() {
             document.getElementById("chart-modal").classList.add("hidden");
-        }
-
-        // 첫 페이지(글로벌 지수) 항목을 누르면 일봉 차트 모달 오픈 (기존 차트 모달 재사용)
-        function openGlobalChartModal(key) {
-            const itemObj = GLOBAL_INDEX_LIST.find(i => i.key === key);
-            if (!itemObj) return;
-
-            const modal = document.getElementById("chart-modal");
-            const content = document.getElementById("chart-modal-content");
-            const title = document.getElementById("chart-modal-title");
-
-            title.innerText = `${itemObj.name} · 일봉`;
-            content.innerHTML = generateLineChartSvg(itemObj.dailyChart, "일봉", 260);
-
-            modal.classList.remove("hidden");
         }
 
         // "주당 분배금" 탭하면 최근 1년 전체 분배 이력을 모달로 보여줌 (기존 차트 모달 재사용)
