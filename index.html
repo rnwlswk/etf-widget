@@ -176,6 +176,26 @@
             return "분봉";
         }
 
+        // 09:00 이전/휴장일처럼 당일 분봉을 못 가져올 때의 대체 화면.
+        // 1순위: 서버에 저장해둔 마지막 거래일 스냅샷(진짜 데이터) 2순위: 예전처럼 네이버 차트 이미지
+        async function renderIntradayFallbackHtml(itemObj, height, fillParent) {
+            try {
+                const res = await fetch(`${MY_SERVER}/api/kis-minute-chart-snapshot/${itemObj.ticker}`);
+                if (res.ok) {
+                    const snap = await res.json();
+                    if (snap.success && Array.isArray(snap.data) && snap.data.length >= 2) {
+                        const label = (snap.date && snap.date.length === 8)
+                            ? `분봉(${snap.date.slice(4, 6)}/${snap.date.slice(6, 8)} 기준)`
+                            : "분봉(최근 거래일 기준)";
+                        return generateCandleChartSvg(snap.data, label, height, fillParent);
+                    }
+                }
+            } catch (e) {
+                console.warn(`[${itemObj.ticker}] 분봉 스냅샷 조회 오류:`, e);
+            }
+            return generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker, height, fillParent);
+        }
+
         // 종목 하나의 당일 분봉을 가져온다. 이미 캐시돼 있으면 그대로 반환하고,
         // 이미 같은 종목을 불러오는 중이면(상세카드 미리보기 로딩과 모달 오픈이 겹치는 경우 등)
         // 새로 요청을 또 보내지 않고 진행 중이던 그 요청 결과를 같이 기다린다 (중복 호출 방지)
@@ -311,8 +331,6 @@
         // (전체 종목을 새로고침마다 다 부르면 KIS 호출이 너무 많아지므로, 실제로 보고 있는 것만 지연 로딩)
         // 중간 미리보기(선그래프/30분치) 없이, 당일 전체 분봉이 완성되면 그때 한 번에 보여준다
         async function maybeLoadIntradayThumb(slideIndex) {
-            if (!canFetchIntradayNow()) return; // 09:00 이전이거나 확인된 휴장일이면 호출하지 않음
-
             const orderedItems = getOrderedItems();
             const itemIndex = slideIndex - 2; // 0=글로벌지수, 1=요약, 2..=종목 상세
             if (itemIndex < 0 || itemIndex >= orderedItems.length) return;
@@ -321,6 +339,15 @@
             if (!itemObj || (itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2)) return; // 이미 로드됐으면 스킵
 
             const thumbId = `intraday-thumb-${itemObj.ticker}`;
+
+            if (!canFetchIntradayNow()) {
+                if (itemObj.intradayFallbackLoaded) return; // 폴백까지 이미 시도했으면 스킵 (반복 호출 방지)
+                itemObj.intradayFallbackLoaded = true;
+                const thumbEl = document.getElementById(thumbId);
+                if (thumbEl) thumbEl.innerHTML = await renderIntradayFallbackHtml(itemObj, 60, false);
+                return;
+            }
+
             const data = await ensureMinuteChartLoaded(itemObj);
             if (data) {
                 const thumbEl = document.getElementById(thumbId);
@@ -873,8 +900,14 @@
             }
 
             // 09:00 이전이거나 확인된 휴장일/주말이면 새로 불러오지 않음 (KIS 분봉 API가 당일 전용이라 전날 대체 불가)
+            // 대신 저장해둔 마지막 거래일 스냅샷이 있으면 그걸, 없으면 예전처럼 네이버 차트 이미지로 대체
             if (!canFetchIntradayNow()) {
-                content.innerHTML = generateCandleChartSvg(null, intradayUnavailableLabel(), 260, true);
+                content.innerHTML = `
+                    <div class="w-full h-full bg-white rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5">
+                        <span class="text-[14px] text-slate-500 font-bold">불러오는 중...</span>
+                    </div>
+                `;
+                content.innerHTML = await renderIntradayFallbackHtml(itemObj, 260, true);
                 return;
             }
 
