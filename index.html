@@ -800,12 +800,18 @@
             // 몸통뿐 아니라 꼬리(고가/저가)까지 화면 안에 들어와야 하므로 high/low 기준으로 축 범위를 잡음
             const highs = candles.map(c => c.high ?? c.close);
             const lows = candles.map(c => c.low ?? c.close);
-            const maxVal = Math.max(...highs);
-            const minVal = Math.min(...lows);
-            const range = (maxVal - minVal) || 1;
+            const rawMax = Math.max(...highs);
+            const rawMin = Math.min(...lows);
+            const rawRange = (rawMax - rawMin) || 1;
 
-            // 위(가격 라벨 칩)/아래(날짜 라벨) 공간을 넉넉히 확보해서 글자가 그래프나 서로와 겹치지 않게 함
-            const PAD_TOP = Math.round(height * 0.09);
+            // 실제 값 범위 위아래로 여백(12%씩)을 둬서, 봉이 화면 끝까지 꽉 차서 위아래로 과장돼 보이는 걸 완화
+            const PADDING_RATIO = 0.12;
+            const maxVal = rawMax + rawRange * PADDING_RATIO;
+            const minVal = rawMin - rawRange * PADDING_RATIO;
+            const range = maxVal - minVal;
+
+            // 위(라벨 칩)/아래(날짜 라벨) 공간을 넉넉히 확보해서 글자가 그래프나 서로와 겹치지 않게 함
+            const PAD_TOP = Math.round(height * 0.07);
             const PAD_BOTTOM = Math.round(height * 0.14);
             const plotH = height - PAD_TOP - PAD_BOTTOM;
             const chartW = 300;
@@ -814,8 +820,9 @@
             const bodyWidth = Math.max(1.2, Math.min(stepX * 0.62, 14)); // 봉이 너무 많을 때(1년) 최소 굵기 보장
             const scaleY = (v) => PAD_TOP + (1 - (v - minVal) / range) * plotH;
 
-            // 상단/중단/하단 3단계 격자선 (네이버 차트의 가격 눈금 스타일)
-            const gridLevels = [maxVal, (maxVal + minVal) / 2, minVal];
+            // 가격 격자선/라벨 5단계 (기존 3단계보다 촘촘하게, 위아래 여백 포함해서 고른 간격)
+            const GRID_COUNT = 4;
+            const gridLevels = Array.from({ length: GRID_COUNT + 1 }, (_, i) => maxVal - (range * i) / GRID_COUNT);
             const gridLines = gridLevels.map(v => {
                 const y = scaleY(v);
                 return `<line x1="0" y1="${y.toFixed(1)}" x2="${chartW}" y2="${y.toFixed(1)}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,4" />`;
@@ -843,12 +850,34 @@
             // 배경 칩(bg-white)을 둬서 격자선 위에서도 잘 보이게 함
             const priceLabels = gridLevels.map(v => {
                 const yPct = ((scaleY(v) / height) * 100).toFixed(1);
-                return `<span class="absolute text-[12px] font-bold text-slate-600 bg-white/95 px-1 rounded" style="top:${yPct}%; right:3px; transform: translateY(-50%);">${formatNumber(Math.round(v))}</span>`;
+                return `<span class="absolute text-[11px] font-bold text-slate-600 bg-white/95 px-1 rounded" style="top:${yPct}%; right:3px; transform: translateY(-50%);">${formatNumber(Math.round(v))}</span>`;
             }).join("");
 
-            const fmtDate = (d) => (d && d.length === 8) ? `${d.slice(4, 6)}/${d.slice(6, 8)}` : "";
-            const firstDate = fmtDate(candles[0].date);
-            const lastDate = fmtDate(candles[candles.length - 1].date);
+            // 8자리(YYYYMMDD)는 일봉/주봉, 6자리(HHMMSS)는 분봉
+            const fmtDate = (d) => {
+                if (!d) return "";
+                if (d.length === 8) return `${d.slice(4, 6)}/${d.slice(6, 8)}`;
+                if (d.length === 6) return `${d.slice(0, 2)}:${d.slice(2, 4)}`;
+                return d;
+            };
+
+            // 하단 날짜/시간 라벨을 양끝 포함 최대 5개, 고르게 분포시켜서 중간중간에도 기준을 알 수 있게 함
+            const LABEL_COUNT = Math.min(5, candles.length);
+            const labelIndices = Array.from({ length: LABEL_COUNT }, (_, i) =>
+                Math.round((i * (candles.length - 1)) / (LABEL_COUNT - 1))
+            );
+            const dateLabels = labelIndices.map((idx, i) => {
+                const isFirst = i === 0;
+                const isLast = i === labelIndices.length - 1;
+                const f = (idx * stepX + stepX / 2) / chartW; // 0~1, 해당 봉의 x축 비율 위치
+                const leftCalc = `calc(${(f * 100).toFixed(2)}% - ${(f * RIGHT_MARGIN).toFixed(1)}px)`;
+                const alignStyle = isFirst
+                    ? `left:2px;`
+                    : isLast
+                        ? `left:${leftCalc}; transform: translateX(-100%);`
+                        : `left:${leftCalc}; transform: translateX(-50%);`;
+                return `<span class="absolute bottom-2 text-[11px] font-bold text-slate-500 bg-white/90 px-1 rounded" style="${alignStyle}">${fmtDate(candles[idx].date)}</span>`;
+            }).join("");
 
             return `
                 <div class="w-full bg-white rounded-2xl border border-slate-300 mt-1.5 overflow-hidden relative ${sizeAttrs.class}" style="${sizeAttrs.style}">
@@ -858,8 +887,7 @@
                         ${candleShapes}
                     </svg>
                     ${priceLabels}
-                    <span class="absolute bottom-2 left-2.5 text-[12px] font-bold text-slate-500 bg-white/90 px-1 rounded">${firstDate}</span>
-                    <span class="absolute bottom-2 text-[12px] font-bold text-slate-500 bg-white/90 px-1 rounded" style="right:${RIGHT_MARGIN + 4}px;">${lastDate}</span>
+                    ${dateLabels}
                 </div>
             `;
         }
