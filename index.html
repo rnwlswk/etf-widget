@@ -683,6 +683,27 @@
             goldItem.discrepancy = ((goldItem.price - intlPriceKRWPerGram) / intlPriceKRWPerGram) * 100;
         }
 
+        // renderApp()은 슬라이더 내용을 통째로 다시 그리므로, 로딩 중간중간 여러 번 부르면
+        // 사용자가 보던 슬라이드 위치가 흐트러질 수 있어 스크롤 위치를 저장했다가 그대로 복원한다
+        function renderAppPreservingScroll() {
+            const slider = document.getElementById("main-slider");
+            const savedScrollLeft = slider ? slider.scrollLeft : 0;
+            renderApp();
+            const newSlider = document.getElementById("main-slider");
+            if (newSlider) newSlider.scrollLeft = savedScrollLeft;
+        }
+
+        async function fetchPriceDataSafe(itemObj) {
+            try {
+                return await fetchPriceData(itemObj);
+            } catch (error) {
+                console.error(`[${itemObj.ticker}] 현재가 업데이트 실패:`, error);
+                return false;
+            }
+        }
+
+        // 한 번에 전부 병렬로 받아서 다 끝나야 화면이 갱신되던 방식 대신,
+        // 슬라이드 순서대로(요약 -> 글로벌지수 -> 종목 상세 하나씩) 받아지는 대로 바로바로 화면에 반영한다
         async function executeFullUpdate() {
             if (isRefreshing) return;
             isRefreshing = true;
@@ -693,10 +714,31 @@
             showProgressToast("KIS 중계 서버에서 실시간 데이터를 받아옵니다...", "blue");
 
             try {
-                const results = await Promise.all(ETF_DATABASE.map(updateSingleItem));
+                // 1단계: 1번째 슬라이드(요약)에 필요한 전 종목 기본 시세부터 받아서 바로 표시
+                const priceResults = await Promise.all(ETF_DATABASE.map(fetchPriceDataSafe));
+                renderAppPreservingScroll();
+
+                // 2단계: 2번째 슬라이드(글로벌 지수) 표시
                 await Promise.all(GLOBAL_INDEX_LIST.map(fetchGlobalIndex));
                 updateGoldDiscrepancy();
-                const successCount = results.filter(Boolean).length;
+                renderAppPreservingScroll();
+
+                // 3단계: 종목 상세 슬라이드에 필요한 나머지 정보(배당/52주/일봉)를 종목별로 하나씩 순서대로 받아와서
+                // 그 종목이 끝날 때마다 바로 반영 (전부 끝날 때까지 기다리지 않음)
+                for (const itemObj of ETF_DATABASE) {
+                    try {
+                        if (!itemObj.isGold) {
+                            await fetchDividendData(itemObj);
+                            await fetch52WeekRange(itemObj);
+                        }
+                        await fetchDailyChart(itemObj);
+                    } catch (error) {
+                        console.error(`[${itemObj.ticker}] 상세정보 업데이트 실패:`, error);
+                    }
+                    renderAppPreservingScroll();
+                }
+
+                const successCount = priceResults.filter(Boolean).length;
                 const now = new Date().toLocaleTimeString();
 
                 if (successCount === ETF_DATABASE.length) {
@@ -715,8 +757,6 @@
             } catch (e) {
                 console.error("동기화 중 오류 발생", e);
             }
-
-            renderApp();
 
             setTimeout(() => {
                 pullIcon.classList.remove("animate-spin");
