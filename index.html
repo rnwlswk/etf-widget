@@ -177,7 +177,7 @@
         }
 
         // 09:00 이전/휴장일처럼 당일 분봉을 못 가져올 때의 대체 화면.
-        // 1순위: 서버에 저장해둔 마지막 거래일 스냅샷(진짜 데이터) 2순위: 예전처럼 네이버 차트 이미지
+        // 서버에 저장해둔 마지막 거래일 스냅샷이 있으면 그걸 보여주고, 없으면 "데이터 없음" 안내만 표시
         async function renderIntradayFallbackHtml(itemObj, height, fillParent) {
             try {
                 const res = await fetch(`${MY_SERVER}/api/kis-minute-chart-snapshot/${itemObj.ticker}`);
@@ -193,7 +193,7 @@
             } catch (e) {
                 console.warn(`[${itemObj.ticker}] 분봉 스냅샷 조회 오류:`, e);
             }
-            return generateHonestTrendSvg(itemObj.prevClose, itemObj.price, itemObj.changeRate, itemObj.ticker, height, fillParent);
+            return generateCandleChartSvg(null, intradayUnavailableLabel(), height, fillParent);
         }
 
         // 종목 하나의 당일 분봉을 가져온다. 이미 캐시돼 있으면 그대로 반환하고,
@@ -314,7 +314,6 @@
             slider.scrollTo({ left: slider.clientWidth * index, behavior: "smooth" });
             currentSlide = index;
             updateDots();
-            maybeLoadIntradayThumb(currentSlide);
         }
 
         function handleSliderScroll() {
@@ -323,35 +322,6 @@
             if (currentSlide !== index) {
                 currentSlide = index;
                 updateDots();
-                maybeLoadIntradayThumb(currentSlide);
-            }
-        }
-
-        // 지금 화면에 보이는 슬라이드가 종목 상세라면, 그 종목의 실제 분봉만 딱 1번 불러와서 미리보기를 채워넣음
-        // (전체 종목을 새로고침마다 다 부르면 KIS 호출이 너무 많아지므로, 실제로 보고 있는 것만 지연 로딩)
-        // 중간 미리보기(선그래프/30분치) 없이, 당일 전체 분봉이 완성되면 그때 한 번에 보여준다
-        async function maybeLoadIntradayThumb(slideIndex) {
-            const orderedItems = getOrderedItems();
-            const itemIndex = slideIndex - 2; // 0=글로벌지수, 1=요약, 2..=종목 상세
-            if (itemIndex < 0 || itemIndex >= orderedItems.length) return;
-
-            const itemObj = orderedItems[itemIndex];
-            if (!itemObj || (itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2)) return; // 이미 로드됐으면 스킵
-
-            const thumbId = `intraday-thumb-${itemObj.ticker}`;
-
-            if (!canFetchIntradayNow()) {
-                if (itemObj.intradayFallbackLoaded) return; // 폴백까지 이미 시도했으면 스킵 (반복 호출 방지)
-                itemObj.intradayFallbackLoaded = true;
-                const thumbEl = document.getElementById(thumbId);
-                if (thumbEl) thumbEl.innerHTML = await renderIntradayFallbackHtml(itemObj, 60, false);
-                return;
-            }
-
-            const data = await ensureMinuteChartLoaded(itemObj);
-            if (data) {
-                const thumbEl = document.getElementById(thumbId);
-                if (thumbEl) thumbEl.innerHTML = generateCandleChartSvg(data, "분봉", 60);
             }
         }
 
@@ -552,6 +522,22 @@
             }
         }
 
+        // 주봉은 모달에서 "주봉" 탭을 눌렀을 때만 불러온다 (매 새로고침마다 미리 받을 필요는 없어서)
+        async function fetchWeeklyChart(itemObj) {
+            if (itemObj.weeklyChart && itemObj.weeklyChart.length >= 2) return itemObj.weeklyChart;
+            try {
+                const res = await fetch(`${MY_SERVER}/api/kis-weekly-chart/${itemObj.ticker}`);
+                if (!res.ok) throw new Error("주봉 조회 서버 오류");
+                const data = await res.json();
+                if (!data.success || !Array.isArray(data.data)) throw new Error("주봉 데이터 없음");
+                itemObj.weeklyChart = data.data;
+                return itemObj.weeklyChart;
+            } catch (e) {
+                console.warn(`[${itemObj.ticker}] 주봉 데이터 로드 오류:`, e);
+                return null;
+            }
+        }
+
         async function updateSingleItem(itemObj) {
             let priceSuccess = false;
             try {
@@ -725,6 +711,8 @@
 
                 // 3단계: 종목 상세 슬라이드에 필요한 나머지 정보(배당/52주/일봉)를 종목별로 하나씩 순서대로 받아와서
                 // 그 종목이 끝날 때마다 바로 반영 (전부 끝날 때까지 기다리지 않음)
+                // 어차피 종목을 하나씩 순서대로 받아오는 김에, 분봉도 여기서 같이 받아온다
+                // (7종목이 동시에 몰리는 게 아니라 한 종목씩 순서대로라 KIS 호출 부담이 없음)
                 for (const itemObj of ETF_DATABASE) {
                     try {
                         if (!itemObj.isGold) {
@@ -732,6 +720,11 @@
                             await fetch52WeekRange(itemObj);
                         }
                         await fetchDailyChart(itemObj);
+                        if (canFetchIntradayNow()) {
+                            await ensureMinuteChartLoaded(itemObj);
+                        } else if (!itemObj.intradayFallbackHtml) {
+                            itemObj.intradayFallbackHtml = await renderIntradayFallbackHtml(itemObj, 60, false);
+                        }
                     } catch (error) {
                         console.error(`[${itemObj.ticker}] 상세정보 업데이트 실패:`, error);
                     }
@@ -769,43 +762,6 @@
                 indicator.style.opacity = "0";
                 pullText.innerText = "당겨서 새로고침";
             }, 1000);
-        }
-
-        // 일중 실시간 차트 이미지 (네이버 금융 스니펫 차트 활용)
-        function generateHonestTrendSvg(prevClose, price, changeRate, ticker, height = 60, fillParent = false) {
-            if (price === null || prevClose === null || isNaN(changeRate)) {
-                return `
-                    <div class="w-full bg-slate-100 rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5" style="height:${height}px;">
-                        <span class="text-[16px] text-slate-500 font-bold">데이터 대기중</span>
-                    </div>
-                `;
-            }
-
-            const isUp = changeRate >= 0;
-            const strokeColor = isUp ? "#f43f5e" : "#3b82f6";
-            // 금현물(M04020000)은 네이버가 차트를 제공하지 않는 특수 상품코드라
-            // 금 가격을 거의 1:1로 추종하는 ACE KRX금현물 ETF(411060) 차트로 대체
-            const chartTicker = ticker === "M04020000" ? "411060" : ticker;
-            const chartUrl = `https://ssl.pstatic.net/imgfinance/chart/item/area/day/${chartTicker}.png?sidcode=${Date.now()}`;
-            const trendFactor = Math.max(-25, Math.min(25, changeRate * 8));
-            const endY = 50 - trendFactor;
-            const sizeAttrs = fillParent ? { class: "h-full", style: "" } : { class: "", style: `height:${height}px;` };
-
-            return `
-                <div class="relative w-full bg-slate-100 rounded-2xl border border-slate-300 flex flex-col justify-center items-center mt-1.5 shadow-inner overflow-hidden ${sizeAttrs.class}" style="${sizeAttrs.style}">
-                    <img src="${chartUrl}"
-                         alt="실시간 차트"
-                         class="absolute inset-0 w-full h-full object-cover opacity-90 transition-opacity duration-300"
-                         onload="this.parentElement.querySelector('.fallback-svg').style.display='none';"
-                         onerror="this.style.display='none'; this.parentElement.querySelector('.fallback-svg').style.display='block';" />
-
-                    <svg class="fallback-svg absolute inset-0 w-full h-full p-3" style="display:none;" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        <line x1="0" y1="50" x2="100" y2="50" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="2,2" />
-                        <path d="M 0 50 Q 50 ${50 - trendFactor / 2}, 100 ${endY}" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" />
-                        <circle cx="100" cy="${endY}" r="4" fill="${strokeColor}" />
-                    </svg>
-                </div>
-            `;
         }
 
         // 일봉 배열을 5개씩 묶어서 대략적인 "주봉" 캔들로 압축 (달력 기준 주 정렬 대신, 거래일 5개=1주 근사)
@@ -913,6 +869,67 @@
 
         // 차트 탭하면 확대보기 모달 오픈 (분봉/일봉 공용)
         // 분봉은 실시간성 데이터라 캐시 없이 열 때마다 서버에서 새로 받아온다 (KIS 1분봉 API를 09:00까지 페이지네이션해서 합친 결과)
+        // 종목 상세의 일봉 확대보기 - 글로벌 지수와 같은 방식으로 일봉/주봉 토글 제공
+        // (여기 주봉은 근사 압축이 아니라 KIS가 직접 내려주는 진짜 달력 기준 주봉)
+        let etfChartActiveTicker = null;
+        let etfChartActivePeriod = "D";
+
+        function renderEtfChartPeriodToggle(ticker, activePeriod) {
+            const btn = (period, label) => `
+                <button onclick="switchEtfChartPeriod('${ticker}', '${period}')"
+                    class="text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${activePeriod === period ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-300'}">
+                    ${label}
+                </button>`;
+            return `<div class="flex gap-1.5 justify-end px-1 pb-1">${btn("D", "일봉")}${btn("W", "주봉")}</div>`;
+        }
+
+        async function switchEtfChartPeriod(ticker, period) {
+            await renderEtfChartModal(ticker, period);
+        }
+
+        async function renderEtfChartModal(ticker, period) {
+            const itemObj = ETF_DATABASE.find(i => i.ticker === ticker);
+            if (!itemObj) return;
+
+            etfChartActiveTicker = ticker;
+            etfChartActivePeriod = period;
+
+            const modal = document.getElementById("chart-modal");
+            const content = document.getElementById("chart-modal-content");
+            const title = document.getElementById("chart-modal-title");
+
+            const chartLabel = period === "W" ? "주봉" : "일봉";
+            title.innerText = `${itemObj.name} · ${chartLabel}`;
+            modal.classList.remove("hidden");
+
+            const toggleHtml = `<div class="shrink-0">${renderEtfChartPeriodToggle(ticker, period)}</div>`;
+
+            if (period === "D") {
+                // 일봉은 새로고침 때 이미 받아둔 상태라 바로 표시
+                content.innerHTML = toggleHtml + `<div class="flex-1 min-h-0">${generateCandleChartSvg(itemObj.dailyChart, "일봉", 260, true)}</div>`;
+                return;
+            }
+
+            // 주봉은 "주봉" 탭을 눌렀을 때만 불러옴
+            if (itemObj.weeklyChart && itemObj.weeklyChart.length >= 2) {
+                content.innerHTML = toggleHtml + `<div class="flex-1 min-h-0">${generateCandleChartSvg(itemObj.weeklyChart, "주봉", 260, true)}</div>`;
+                return;
+            }
+
+            content.innerHTML = toggleHtml + `
+                <div class="flex-1 min-h-0 bg-white rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5">
+                    <span class="text-[14px] text-slate-500 font-bold">주봉 불러오는 중...</span>
+                </div>
+            `;
+
+            const weeklyData = await fetchWeeklyChart(itemObj);
+
+            // 로딩되는 사이 모달을 닫았거나 다른 종목/탭으로 바꿨으면 반영하지 않음
+            if (!modal.classList.contains("hidden") && etfChartActiveTicker === ticker && etfChartActivePeriod === period) {
+                content.innerHTML = toggleHtml + `<div class="flex-1 min-h-0">${generateCandleChartSvg(weeklyData, "주봉", 260, true)}</div>`;
+            }
+        }
+
         async function openChartModal(type, ticker) {
             const itemObj = ETF_DATABASE.find(i => i.ticker === ticker);
             if (!itemObj) return;
@@ -925,8 +942,7 @@
 
             if (type === "daily") {
                 intradayActiveTicker = null; // 분봉 로딩 응답 추적 해제
-                title.innerText = `${itemObj.name} · 일봉`;
-                content.innerHTML = generateCandleChartSvg(itemObj.dailyChart, "일봉", 260, true);
+                await renderEtfChartModal(ticker, "D");
                 return;
             }
 
@@ -1274,7 +1290,7 @@
                                 <div id="intraday-thumb-${itemObj.ticker}">
                                     ${(itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2)
                                         ? generateCandleChartSvg(itemObj.minuteChartCache, "분봉", 60)
-                                        : generateCandleChartSvg(null, intradayUnavailableLabel(), 60)}
+                                        : (itemObj.intradayFallbackHtml || generateCandleChartSvg(null, intradayUnavailableLabel(), 60))}
                                 </div>
                             </div>
                             <div onclick="openChartModal('daily', '${itemObj.ticker}')" class="active-scale cursor-pointer">
@@ -1590,7 +1606,6 @@
             slider.removeEventListener("scroll", handleSliderScroll);
             slider.addEventListener("scroll", handleSliderScroll);
             updateDots();
-            maybeLoadIntradayThumb(currentSlide); // 새로고침 시점에 이미 종목 상세 슬라이드를 보고 있었다면 바로 로드
         }
 
         // 당겨서 새로고침: 현재 보이는 화면의 스크롤 위치가 맨 위일 때만 아래로 당기는 제스처를 인식
