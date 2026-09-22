@@ -313,7 +313,9 @@
 
         function saveEtfListToStorage() {
             try {
-                const minimal = ETF_DATABASE.map(i => ({ id: i.id, name: i.name, ticker: i.ticker, isGold: i.isGold }));
+                // ETF_DATABASE 자체의 원래 순서가 아니라, 드래그로 정한 표시 순서(itemOrder) 그대로 저장해야
+                // 다음에 앱을 열어도 재배치한 자리가 유지됨
+                const minimal = getOrderedItems().map(i => ({ id: i.id, name: i.name, ticker: i.ticker, isGold: i.isGold }));
                 localStorage.setItem(ETF_LIST_STORAGE_KEY, JSON.stringify(minimal));
             } catch (e) {
                 console.warn("종목 목록 저장 실패:", e);
@@ -1443,6 +1445,8 @@
                     dragging = false;
                     row.classList.remove("dragging-row");
                     row.style.transform = "";
+                    saveEtfListToStorage(); // 드래그로 바꾼 순서를 저장해둬야 다음에 앱을 열어도 유지됨
+                    syncTickerListToServer();
                     // 재배치 이후엔 각 카드의 onclick에 박혀있던 인덱스가 낡은 값이 되므로 통째로 다시 그림
                     renderApp();
                     setTimeout(() => { row.dataset.suppressClick = ""; }, 50);
