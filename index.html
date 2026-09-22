@@ -63,11 +63,17 @@
 
                 <!-- 요약 리스트 슬라이드 (렌더링 시 두 번째 위치로 재배치됨) -->
                 <div id="summary-slide" class="w-full h-full shrink-0 snap-center flex flex-col justify-start space-y-2 p-0.5">
-                    <div class="px-2 flex items-center gap-1.5 text-[14px] text-slate-600 font-mono shrink-0">
-                        <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
-                        <span id="status-text">연동 대기</span>
-                        <span class="text-slate-500">·</span>
-                        <span id="update-timestamp">-</span>
+                    <div class="px-2 flex items-center justify-between gap-1.5 shrink-0">
+                        <div class="flex items-center gap-1.5 text-[14px] text-slate-600 font-mono">
+                            <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
+                            <span id="status-text">연동 대기</span>
+                            <span class="text-slate-500">·</span>
+                            <span id="update-timestamp">-</span>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button onclick="openRemoveEtfModal()" class="active-scale w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-black text-[17px] leading-none">−</button>
+                            <button onclick="openAddEtfModal()" class="active-scale w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-white font-black text-[17px] leading-none">+</button>
+                        </div>
                     </div>
                     <div class="flex-1 overflow-y-auto no-scrollbar space-y-[3px] pb-2" id="summary-list-container">
                         <!-- 자산 목록이 여기에 동적으로 추가됩니다 -->
@@ -99,13 +105,46 @@
     </div>
 
     <!-- 차트 확대보기 모달 - 화면을 최대한 활용하는 바텀시트 형태 -->
-    <div id="chart-modal" class="hidden fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center" onclick="if(event.target===this) closeChartModal();">
-        <div class="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md h-[59vh] sm:h-auto sm:max-h-[59vh] shadow-2xl flex flex-col p-4">
+    <div id="chart-modal" class="hidden fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4" onclick="if(event.target===this) closeChartModal();">
+        <div class="bg-white rounded-2xl w-full max-w-md h-[59vh] max-h-[59vh] shadow-2xl flex flex-col p-4">
             <div class="flex justify-between items-center mb-2 shrink-0">
                 <h3 id="chart-modal-title" class="text-[20px] font-black text-slate-900"></h3>
                 <button onclick="closeChartModal()" class="active-scale w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-lg">✕</button>
             </div>
             <div id="chart-modal-content" class="flex-1 min-h-0 flex flex-col"></div>
+        </div>
+    </div>
+
+    <!-- 종목 추가 모달 -->
+    <div id="add-etf-modal" class="hidden fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4" onclick="if(event.target===this) closeAddEtfModal();">
+        <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-4">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="text-[18px] font-black text-slate-900">종목 추가</h3>
+                <button onclick="closeAddEtfModal()" class="active-scale w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold">✕</button>
+            </div>
+            <div class="space-y-2">
+                <div>
+                    <label class="text-[12px] font-bold text-slate-500 block mb-1">종목명</label>
+                    <input id="add-etf-name" type="text" placeholder="예: TIGER 미국배당다우존스" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" />
+                </div>
+                <div>
+                    <label class="text-[12px] font-bold text-slate-500 block mb-1">종목코드 (6자리)</label>
+                    <input id="add-etf-ticker" type="text" inputmode="numeric" maxlength="6" placeholder="예: 458730" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" />
+                </div>
+                <p id="add-etf-error" class="text-[12px] text-rose-500 font-bold hidden"></p>
+                <button onclick="submitAddEtf()" class="active-scale w-full bg-slate-800 text-white rounded-xl py-2.5 text-[15px] font-bold mt-1">추가하기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 종목 삭제 모달 -->
+    <div id="remove-etf-modal" class="hidden fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4" onclick="if(event.target===this) closeRemoveEtfModal();">
+        <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-4 max-h-[70vh] flex flex-col">
+            <div class="flex justify-between items-center mb-3 shrink-0">
+                <h3 class="text-[18px] font-black text-slate-900">종목 삭제</h3>
+                <button onclick="closeRemoveEtfModal()" class="active-scale w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold">✕</button>
+            </div>
+            <div id="remove-etf-list" class="flex-1 min-h-0 overflow-y-auto space-y-1.5"></div>
         </div>
     </div>
 
@@ -199,9 +238,22 @@
         // 종목 하나의 당일 분봉을 가져온다. 이미 캐시돼 있으면 그대로 반환하고,
         // 이미 같은 종목을 불러오는 중이면(상세카드 미리보기 로딩과 모달 오픈이 겹치는 경우 등)
         // 새로 요청을 또 보내지 않고 진행 중이던 그 요청 결과를 같이 기다린다 (중복 호출 방지)
+        // 오늘(KST 기준) 날짜를 "YYYYMMDD"로. 탭을 하루 넘게 켜두고 있어도 날짜가 바뀌면
+        // 어제 분봉 캐시를 오늘 것처럼 계속 보여주지 않도록 이걸로 캐시 유효성을 확인한다
+        function getKstTodayYmdFrontend() {
+            const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
+            return parts.replace(/-/g, "");
+        }
+
         async function ensureMinuteChartLoaded(itemObj) {
-            if (itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2) {
+            const today = getKstTodayYmdFrontend();
+            if (itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2 && itemObj.minuteChartCacheDate === today) {
                 return itemObj.minuteChartCache;
+            }
+            if (itemObj.minuteChartCacheDate && itemObj.minuteChartCacheDate !== today) {
+                // 날짜가 바뀌었으면 어제 캐시는 버림 (진행 중이던 요청도 어제 기준이었을 수 있어 같이 초기화)
+                itemObj.minuteChartCache = null;
+                itemObj.minuteChartLoadingPromise = null;
             }
             if (itemObj.minuteChartLoadingPromise) {
                 return itemObj.minuteChartLoadingPromise;
@@ -213,6 +265,7 @@
                     const data = await res.json();
                     if (data.success && Array.isArray(data.data) && data.data.length >= 2) {
                         itemObj.minuteChartCache = data.data;
+                        itemObj.minuteChartCacheDate = today;
                         return data.data;
                     }
                     return null;
@@ -227,6 +280,17 @@
             return itemObj.minuteChartLoadingPromise;
         }
 
+        // 종목 하나의 "빈 틀"을 만드는 함수 - 기본 7종목이든, 사용자가 추가한 종목이든 동일한 모양으로 생성
+        function createEtfItem({ id, name, ticker, isGold }) {
+            return {
+                id, name, ticker, isGold: !!isGold,
+                price: null, prevClose: null, changeRate: null, changeAmt: null,
+                discrepancy: null, nav: null, volume: null, marketCap: null,
+                divAmt: null, divAmtRaw: null, recordDate: null, divTrend: null, dividendHistory: null,
+                rangeHigh: null, rangeLow: null, rangeLabel: null, dailyChart: null
+            };
+        }
+
         // 종목 데이터베이스 (분배율 필드는 제외, 분배금/지급일은 유지)
         const ETF_DATABASE = [
             { id: "TIGER_NSQ100_DAILY_CC", name: "TIGER 미국나스닥100타겟데일리커버드콜", ticker: "486290", isGold: false },
@@ -236,13 +300,46 @@
             { id: "KODEX_FIN_DIV", name: "KODEX 금융고배당TOP10타겟위클리커버드콜", ticker: "498410", isGold: false },
             { id: "TIGER_REITS", name: "TIGER 리츠부동산인프라", ticker: "329200", isGold: false },
             { id: "GOLD", name: "KRX 금 현물", ticker: "M04020000", isGold: true }
-        ].map(item => ({
-            ...item,
-            price: null, prevClose: null, changeRate: null, changeAmt: null,
-            discrepancy: null, nav: null, volume: null, marketCap: null,
-            divAmt: null, divAmtRaw: null, recordDate: null, divTrend: null, dividendHistory: null,
-            rangeHigh: null, rangeLow: null, rangeLabel: null, dailyChart: null
-        }));
+        ].map(createEtfItem);
+
+        // 사용자가 +/- 버튼으로 추가/삭제한 목록을 이 브라우저에 저장해서, 다음에 앱을 열어도 유지되게 함
+        const ETF_LIST_STORAGE_KEY = "customEtfList";
+
+        function saveEtfListToStorage() {
+            try {
+                const minimal = ETF_DATABASE.map(i => ({ id: i.id, name: i.name, ticker: i.ticker, isGold: i.isGold }));
+                localStorage.setItem(ETF_LIST_STORAGE_KEY, JSON.stringify(minimal));
+            } catch (e) {
+                console.warn("종목 목록 저장 실패:", e);
+            }
+        }
+
+        function loadEtfListFromStorage() {
+            try {
+                const raw = localStorage.getItem(ETF_LIST_STORAGE_KEY);
+                if (!raw) return null;
+                const parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed) || parsed.length === 0) return null;
+                return parsed;
+            } catch (e) {
+                console.warn("종목 목록 불러오기 실패:", e);
+                return null;
+            }
+        }
+
+        // 서버(relay_server.js)도 이 종목 목록을 알아야 장마감 후 분봉 자동 스냅샷 대상에 포함시킬 수 있어서,
+        // 목록이 바뀔 때마다(추가/삭제/최초 로드) 통째로 보내서 서버 쪽 목록도 맞춰준다
+        async function syncTickerListToServer() {
+            try {
+                await fetch(`${MY_SERVER}/api/ticker-list`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ tickers: ETF_DATABASE.map(i => i.ticker) })
+                });
+            } catch (e) {
+                console.warn("종목 목록 서버 동기화 실패:", e);
+            }
+        }
 
         // 계산기 탭에서 입력한 보유 주식수 (세션 메모리에만 보관 - 새로고침 시에도 값 유지)
         const userShares = {};
@@ -722,8 +819,9 @@
                         await fetchDailyChart(itemObj);
                         if (canFetchIntradayNow()) {
                             await ensureMinuteChartLoaded(itemObj);
-                        } else if (!itemObj.intradayFallbackHtml) {
+                        } else if (!itemObj.intradayFallbackHtml || itemObj.intradayFallbackHtmlDate !== getKstTodayYmdFrontend()) {
                             itemObj.intradayFallbackHtml = await renderIntradayFallbackHtml(itemObj, 60, false);
+                            itemObj.intradayFallbackHtmlDate = getKstTodayYmdFrontend();
                         }
                     } catch (error) {
                         console.error(`[${itemObj.ticker}] 상세정보 업데이트 실패:`, error);
@@ -987,8 +1085,8 @@
             intradayActiveTicker = ticker;
             title.innerText = `${itemObj.name} · 분봉`;
 
-            // 상세카드 미리보기에서 이미 당일 분봉을 받아둔 상태라면, 그걸 그대로 확대해서 보여줄 뿐 다시 부를 필요 없음
-            if (itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2) {
+            // 상세카드 미리보기에서 이미 오늘자 분봉을 받아둔 상태라면, 그걸 그대로 확대해서 보여줄 뿐 다시 부를 필요 없음
+            if (itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2 && itemObj.minuteChartCacheDate === getKstTodayYmdFrontend()) {
                 content.innerHTML = generateCandleChartSvg(itemObj.minuteChartCache, "분봉", 260, true);
                 return;
             }
@@ -1040,6 +1138,80 @@
 
         function closeChartModal() {
             document.getElementById("chart-modal").classList.add("hidden");
+        }
+
+        // 종목 추가
+        function openAddEtfModal() {
+            document.getElementById("add-etf-name").value = "";
+            document.getElementById("add-etf-ticker").value = "";
+            document.getElementById("add-etf-error").classList.add("hidden");
+            document.getElementById("add-etf-modal").classList.remove("hidden");
+        }
+
+        function closeAddEtfModal() {
+            document.getElementById("add-etf-modal").classList.add("hidden");
+        }
+
+        function showAddEtfError(msg) {
+            const el = document.getElementById("add-etf-error");
+            el.innerText = msg;
+            el.classList.remove("hidden");
+        }
+
+        async function submitAddEtf() {
+            const name = document.getElementById("add-etf-name").value.trim();
+            const ticker = document.getElementById("add-etf-ticker").value.trim();
+
+            if (!name) return showAddEtfError("종목명을 입력해주세요.");
+            if (!/^\d{6}$/.test(ticker)) return showAddEtfError("종목코드는 숫자 6자리여야 해요.");
+            if (ETF_DATABASE.some(i => i.ticker === ticker)) return showAddEtfError("이미 추가된 종목코드예요.");
+
+            const newItem = createEtfItem({ id: `custom_${ticker}`, name, ticker, isGold: false });
+            ETF_DATABASE.push(newItem);
+            itemOrder.push(newItem.id); // 드래그 순서 배열에도 반영해야 목록에 보임
+            saveEtfListToStorage();
+            syncTickerListToServer();
+            closeAddEtfModal();
+            renderApp();
+
+            // 추가한 종목의 실제 데이터를 바로 받아와서 채워넣음
+            try {
+                await fetchPriceDataSafe(newItem);
+                await fetchDividendData(newItem);
+                await fetch52WeekRange(newItem);
+                await fetchDailyChart(newItem);
+            } catch (e) {
+                console.warn(`[${newItem.ticker}] 신규 종목 데이터 로드 오류:`, e);
+            }
+            renderApp();
+        }
+
+        // 종목 삭제
+        function openRemoveEtfModal() {
+            const listEl = document.getElementById("remove-etf-list");
+            listEl.innerHTML = ETF_DATABASE.map(item => `
+                <div class="flex justify-between items-center bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5">
+                    <span class="text-[14px] font-bold text-slate-800 truncate pr-2">${item.name}</span>
+                    <button onclick="removeEtfItem('${item.id}')" class="active-scale shrink-0 w-7 h-7 rounded-full bg-rose-50 text-rose-500 font-black flex items-center justify-center">✕</button>
+                </div>
+            `).join("");
+            document.getElementById("remove-etf-modal").classList.remove("hidden");
+        }
+
+        function closeRemoveEtfModal() {
+            document.getElementById("remove-etf-modal").classList.add("hidden");
+        }
+
+        function removeEtfItem(id) {
+            const idx = ETF_DATABASE.findIndex(i => i.id === id);
+            if (idx === -1) return;
+            ETF_DATABASE.splice(idx, 1);
+            const orderIdx = itemOrder.indexOf(id);
+            if (orderIdx !== -1) itemOrder.splice(orderIdx, 1); // 드래그 순서 배열에서도 제거
+            saveEtfListToStorage();
+            syncTickerListToServer();
+            openRemoveEtfModal(); // 목록을 다시 그려서 방금 지운 항목이 빠지게 함
+            renderApp();
         }
 
         // "주당 분배금" 탭하면 최근 1년 전체 분배 이력을 모달로 보여줌 (기존 차트 모달 재사용)
@@ -1326,7 +1498,7 @@
                         <div class="space-y-1">
                             <div onclick="openChartModal('intraday', '${itemObj.ticker}')" class="active-scale cursor-pointer">
                                 <div id="intraday-thumb-${itemObj.ticker}">
-                                    ${(itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2)
+                                    ${(itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2 && itemObj.minuteChartCacheDate === getKstTodayYmdFrontend())
                                         ? generateCandleChartSvg(itemObj.minuteChartCache, "분봉", 60)
                                         : (itemObj.intradayFallbackHtml || generateCandleChartSvg(null, intradayUnavailableLabel(), 60))}
                                 </div>
@@ -1723,8 +1895,17 @@
 
         // 초기 시작
         window.onload = function() {
+            // 사용자가 +/- 버튼으로 커스터마이징한 종목 목록이 저장돼 있으면 기본 7종목 대신 그걸로 시작
+            const savedList = loadEtfListFromStorage();
+            if (savedList) {
+                ETF_DATABASE.length = 0;
+                savedList.forEach(item => ETF_DATABASE.push(createEtfItem(item)));
+                itemOrder = ETF_DATABASE.map(item => item.id); // 순서 배열도 새 목록 기준으로 재설정
+            }
+
             renderApp();
             setupPullToRefresh();
+            syncTickerListToServer(); // 서버가 자동 분봉 스냅샷을 어떤 종목 대상으로 돌릴지 알 수 있게 동기화
             refreshTradingDayStatus(); // 오늘이 임시공휴일 등으로 실제 휴장인지 KIS에 확인
 
             // 새로고침 시 브라우저가 스크롤 위치를 기억해서 엉뚱한 슬라이드로 열리는 경우가 있어, 항상 첫 번째 슬라이드로 고정
