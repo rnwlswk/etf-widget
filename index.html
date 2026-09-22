@@ -117,23 +117,29 @@
 
     <!-- 종목 추가 모달 -->
     <div id="add-etf-modal" class="hidden fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4" onclick="if(event.target===this) closeAddEtfModal();">
-        <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-4">
-            <div class="flex justify-between items-center mb-3">
+        <div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-4 max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center mb-3 shrink-0">
                 <h3 class="text-[18px] font-black text-slate-900">종목 추가</h3>
                 <button onclick="closeAddEtfModal()" class="active-scale w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold">✕</button>
             </div>
-            <div class="space-y-2">
-                <div>
-                    <label class="text-[12px] font-bold text-slate-500 block mb-1">종목코드 (6자리, 숫자/영문)</label>
-                    <input id="add-etf-ticker" type="text" maxlength="6" placeholder="예: 458730 또는 0219E0" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" style="text-transform: uppercase;" />
-                </div>
-                <div>
-                    <label class="text-[12px] font-bold text-slate-500 block mb-1">종목명 (비워두면 자동조회 시도)</label>
-                    <input id="add-etf-name" type="text" placeholder="예: TIGER 미국배당다우존스" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" />
+            <div class="space-y-2 shrink-0">
+                <div class="flex gap-1.5">
+                    <input id="add-etf-search" type="text" placeholder="종목명으로 검색 (예: 나스닥100)" class="flex-1 min-w-0 border border-slate-300 rounded-xl px-3 py-2 text-[15px]" onkeydown="if(event.key==='Enter'){event.preventDefault(); searchEtfByName();}" />
+                    <button onclick="searchEtfByName()" class="active-scale shrink-0 bg-slate-800 text-white rounded-xl px-4 text-[14px] font-bold">검색</button>
                 </div>
                 <p id="add-etf-error" class="text-[12px] text-rose-500 font-bold hidden"></p>
-                <button id="add-etf-submit-btn" onclick="submitAddEtf()" class="active-scale w-full bg-slate-800 text-white rounded-xl py-2.5 text-[15px] font-bold mt-1">추가하기</button>
             </div>
+            <div id="add-etf-search-results" class="flex-1 min-h-0 overflow-y-auto space-y-1.5 mt-2"></div>
+
+            <!-- 검색이 안 될 때를 위한 직접 입력(코드+이름) 폴백 -->
+            <details class="mt-2 shrink-0">
+                <summary class="text-[12px] text-slate-400 font-bold cursor-pointer select-none">검색이 안 되면 코드로 직접 추가</summary>
+                <div class="space-y-2 mt-2">
+                    <input id="add-etf-ticker" type="text" maxlength="6" placeholder="종목코드 6자리 (예: 458730)" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" style="text-transform: uppercase;" />
+                    <input id="add-etf-name" type="text" placeholder="종목명 (비워두면 자동조회 시도)" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" />
+                    <button id="add-etf-submit-btn" onclick="submitAddEtf()" class="active-scale w-full bg-slate-800 text-white rounded-xl py-2.5 text-[15px] font-bold">추가하기</button>
+                </div>
+            </details>
         </div>
     </div>
 
@@ -1142,6 +1148,8 @@
 
         // 종목 추가
         function openAddEtfModal() {
+            document.getElementById("add-etf-search").value = "";
+            document.getElementById("add-etf-search-results").innerHTML = "";
             document.getElementById("add-etf-ticker").value = "";
             document.getElementById("add-etf-name").value = "";
             document.getElementById("add-etf-error").classList.add("hidden");
@@ -1157,6 +1165,51 @@
             el.innerText = msg;
             el.classList.remove("hidden");
         }
+
+        // 종목명으로 검색해서 후보 목록을 보여줌 (네이버 자동완성 비공식 API 기반)
+        async function searchEtfByName() {
+            const q = document.getElementById("add-etf-search").value.trim();
+            const resultsEl = document.getElementById("add-etf-search-results");
+            const errorEl = document.getElementById("add-etf-error");
+            errorEl.classList.add("hidden");
+
+            if (!q) return;
+
+            resultsEl.innerHTML = `<p class="text-[13px] text-slate-400 font-bold text-center py-3">검색 중...</p>`;
+
+            try {
+                const res = await fetch(`${MY_SERVER}/api/search-stock?q=${encodeURIComponent(q)}`);
+                const data = await res.json();
+
+                if (!data.success || !Array.isArray(data.results) || data.results.length === 0) {
+                    resultsEl.innerHTML = "";
+                    errorEl.innerText = "검색 결과가 없어요. 아래 '코드로 직접 추가'를 이용해주세요.";
+                    errorEl.classList.remove("hidden");
+                    return;
+                }
+
+                resultsEl.innerHTML = data.results.map(r => `
+                    <button onclick="addEtfFromSearchResult('${r.code}', ${JSON.stringify(r.name).replace(/'/g, "&#39;")})"
+                        class="active-scale w-full text-left bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 flex justify-between items-center">
+                        <span class="text-[14px] font-bold text-slate-800 truncate pr-2">${r.name}</span>
+                        <span class="text-[12px] text-slate-400 font-mono shrink-0">${r.code}</span>
+                    </button>
+                `).join("");
+            } catch (e) {
+                console.warn("종목 검색 오류:", e);
+                resultsEl.innerHTML = "";
+                errorEl.innerText = "검색 중 오류가 발생했어요. 아래 '코드로 직접 추가'를 이용해주세요.";
+                errorEl.classList.remove("hidden");
+            }
+        }
+
+        // 검색 결과 항목을 탭하면 그 코드+이름으로 바로 추가
+        function addEtfFromSearchResult(code, name) {
+            document.getElementById("add-etf-ticker").value = code;
+            document.getElementById("add-etf-name").value = name;
+            submitAddEtf();
+        }
+
 
         // 종목코드로 KIS에 현재가를 조회해서, 그 응답에 같이 들어있는 종목명(hts_kor_isnm)을 가져옴
         async function lookupEtfName(ticker) {
