@@ -1167,6 +1167,8 @@
         }
 
         // 종목명으로 검색해서 후보 목록을 보여줌 (네이버 자동완성 비공식 API 기반)
+        let lastEtfSearchResults = []; // 검색 결과를 저장해뒀다가 버튼 클릭 시 인덱스로 참조 (이름에 따옴표가 섞여도 안전하게)
+
         async function searchEtfByName() {
             const q = document.getElementById("add-etf-search").value.trim();
             const resultsEl = document.getElementById("add-etf-search-results");
@@ -1188,8 +1190,9 @@
                     return;
                 }
 
-                resultsEl.innerHTML = data.results.map(r => `
-                    <button onclick="addEtfFromSearchResult('${r.code}', ${JSON.stringify(r.name).replace(/'/g, "&#39;")})"
+                lastEtfSearchResults = data.results;
+                resultsEl.innerHTML = data.results.map((r, i) => `
+                    <button onclick="addEtfFromSearchResult(${i})"
                         class="active-scale w-full text-left bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 flex justify-between items-center">
                         <span class="text-[14px] font-bold text-slate-800 truncate pr-2">${r.name}</span>
                         <span class="text-[12px] text-slate-400 font-mono shrink-0">${r.code}</span>
@@ -1204,9 +1207,11 @@
         }
 
         // 검색 결과 항목을 탭하면 그 코드+이름으로 바로 추가
-        function addEtfFromSearchResult(code, name) {
-            document.getElementById("add-etf-ticker").value = code;
-            document.getElementById("add-etf-name").value = name;
+        function addEtfFromSearchResult(index) {
+            const r = lastEtfSearchResults[index];
+            if (!r) return;
+            document.getElementById("add-etf-ticker").value = r.code;
+            document.getElementById("add-etf-name").value = r.name;
             submitAddEtf();
         }
 
