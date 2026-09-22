@@ -124,15 +124,16 @@
             </div>
             <div class="space-y-2">
                 <div>
-                    <label class="text-[12px] font-bold text-slate-500 block mb-1">종목명</label>
+                    <label class="text-[12px] font-bold text-slate-500 block mb-1">종목코드 (6자리, 숫자/영문)</label>
+                    <input id="add-etf-ticker" type="text" maxlength="6" placeholder="예: 458730 또는 0219E0" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" style="text-transform: uppercase;" />
+                    <p class="text-[11px] text-slate-400 mt-1">종목명은 코드로 자동 조회돼요</p>
+                </div>
+                <div id="add-etf-name-wrap" class="hidden">
+                    <label class="text-[12px] font-bold text-slate-500 block mb-1">종목명 (자동조회 실패 - 직접 입력)</label>
                     <input id="add-etf-name" type="text" placeholder="예: TIGER 미국배당다우존스" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" />
                 </div>
-                <div>
-                    <label class="text-[12px] font-bold text-slate-500 block mb-1">종목코드 (6자리)</label>
-                    <input id="add-etf-ticker" type="text" inputmode="numeric" maxlength="6" placeholder="예: 458730" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" />
-                </div>
                 <p id="add-etf-error" class="text-[12px] text-rose-500 font-bold hidden"></p>
-                <button onclick="submitAddEtf()" class="active-scale w-full bg-slate-800 text-white rounded-xl py-2.5 text-[15px] font-bold mt-1">추가하기</button>
+                <button id="add-etf-submit-btn" onclick="submitAddEtf()" class="active-scale w-full bg-slate-800 text-white rounded-xl py-2.5 text-[15px] font-bold mt-1">추가하기</button>
             </div>
         </div>
     </div>
@@ -1142,8 +1143,9 @@
 
         // 종목 추가
         function openAddEtfModal() {
-            document.getElementById("add-etf-name").value = "";
             document.getElementById("add-etf-ticker").value = "";
+            document.getElementById("add-etf-name").value = "";
+            document.getElementById("add-etf-name-wrap").classList.add("hidden");
             document.getElementById("add-etf-error").classList.add("hidden");
             document.getElementById("add-etf-modal").classList.remove("hidden");
         }
@@ -1158,13 +1160,42 @@
             el.classList.remove("hidden");
         }
 
-        async function submitAddEtf() {
-            const name = document.getElementById("add-etf-name").value.trim();
-            const ticker = document.getElementById("add-etf-ticker").value.trim();
+        // 종목코드로 KIS에 현재가를 조회해서, 그 응답에 같이 들어있는 종목명(hts_kor_isnm)을 가져옴
+        async function lookupEtfName(ticker) {
+            try {
+                const res = await fetch(`${MY_SERVER}/api/kis-data/${ticker}`);
+                if (!res.ok) return null;
+                const data = await res.json();
+                const name = data?.output?.hts_kor_isnm;
+                return name ? name.trim() : null;
+            } catch (e) {
+                console.warn(`[${ticker}] 종목명 조회 오류:`, e);
+                return null;
+            }
+        }
 
-            if (!name) return showAddEtfError("종목명을 입력해주세요.");
-            if (!/^\d{6}$/.test(ticker)) return showAddEtfError("종목코드는 숫자 6자리여야 해요.");
+        async function submitAddEtf() {
+            const ticker = document.getElementById("add-etf-ticker").value.trim().toUpperCase();
+            const nameWrap = document.getElementById("add-etf-name-wrap");
+            const manualName = document.getElementById("add-etf-name").value.trim();
+
+            if (!/^[0-9A-Z]{6}$/.test(ticker)) return showAddEtfError("종목코드는 숫자/영문 6자리여야 해요. (예: 458730, 0219E0)");
             if (ETF_DATABASE.some(i => i.ticker === ticker)) return showAddEtfError("이미 추가된 종목코드예요.");
+
+            const submitBtn = document.getElementById("add-etf-submit-btn");
+            submitBtn.disabled = true;
+            submitBtn.innerText = "종목명 확인 중...";
+
+            // 이름을 직접 입력해둔 상태(자동조회 실패 후 재시도)면 그걸 쓰고, 아니면 자동 조회
+            let name = manualName || await lookupEtfName(ticker);
+
+            submitBtn.disabled = false;
+            submitBtn.innerText = "추가하기";
+
+            if (!name) {
+                nameWrap.classList.remove("hidden");
+                return showAddEtfError("종목명을 자동으로 못 찾았어요. 코드가 맞는지 확인하시거나, 아래에 직접 입력해주세요.");
+            }
 
             const newItem = createEtfItem({ id: `custom_${ticker}`, name, ticker, isGold: false });
             ETF_DATABASE.push(newItem);
