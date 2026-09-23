@@ -774,16 +774,6 @@
             goldItem.discrepancy = ((goldItem.price - intlPriceKRWPerGram) / intlPriceKRWPerGram) * 100;
         }
 
-        // renderApp()은 슬라이더 내용을 통째로 다시 그리므로, 로딩 중간중간 여러 번 부르면
-        // 사용자가 보던 슬라이드 위치가 흐트러질 수 있어 스크롤 위치를 저장했다가 그대로 복원한다
-        function renderAppPreservingScroll() {
-            const slider = document.getElementById("main-slider");
-            const savedScrollLeft = slider ? slider.scrollLeft : 0;
-            renderApp();
-            const newSlider = document.getElementById("main-slider");
-            if (newSlider) newSlider.scrollLeft = savedScrollLeft;
-        }
-
         async function fetchPriceDataSafe(itemObj) {
             try {
                 return await fetchPriceData(itemObj);
@@ -807,12 +797,12 @@
             try {
                 // 1단계: 1번째 슬라이드(요약)에 필요한 전 종목 기본 시세부터 받아서 바로 표시
                 const priceResults = await Promise.all(ETF_DATABASE.map(fetchPriceDataSafe));
-                renderAppPreservingScroll();
+                renderApp();
 
                 // 2단계: 2번째 슬라이드(글로벌 지수) 표시
                 await Promise.all(GLOBAL_INDEX_LIST.map(fetchGlobalIndex));
                 updateGoldDiscrepancy();
-                renderAppPreservingScroll();
+                renderApp();
 
                 // 3단계: 종목 상세 슬라이드에 필요한 나머지 정보(배당/52주/일봉)를 종목별로 하나씩 순서대로 받아와서
                 // 그 종목이 끝날 때마다 바로 반영 (전부 끝날 때까지 기다리지 않음)
@@ -834,7 +824,7 @@
                     } catch (error) {
                         console.error(`[${itemObj.ticker}] 상세정보 업데이트 실패:`, error);
                     }
-                    renderAppPreservingScroll();
+                    renderApp();
                 }
 
                 const successCount = priceResults.filter(Boolean).length;
@@ -1388,7 +1378,8 @@
             let pressTimer = null;
             let startY = 0;
             let dragging = false;
-            let startRowTop = 0;
+            let startRowTop = 0;     // 드래그 시작 시점의 카드 원래(정적) 위치 - 절대 안 바뀜
+            let naturalTopNow = 0;   // 카드의 "현재" 정적 위치 - 자리 바뀔 때마다 다시 측정해서 갱신
 
             function onTouchStart(e) {
                 const touch = e.touches[0];
@@ -1399,6 +1390,7 @@
                     row.dataset.suppressClick = "1";
                     row.classList.add("dragging-row");
                     startRowTop = row.getBoundingClientRect().top;
+                    naturalTopNow = startRowTop;
                     if (navigator.vibrate) navigator.vibrate(15);
                 }, 450);
             }
@@ -1410,12 +1402,19 @@
                     return;
                 }
                 e.preventDefault();
-                const deltaY = touch.clientY - startY;
-                row.style.transform = `translateY(${deltaY}px) scale(1.02)`;
+
+                // 손가락이 처음 잡은 지점에서 실제로 움직인 절대량 (자리 바뀜과 무관하게 항상 정확함)
+                const fingerDelta = touch.clientY - startY;
+
+                // 카드를 손가락 위치에 맞추려면, "원래 있어야 할 화면상 위치(startRowTop + fingerDelta)"에서
+                // "지금 이 카드의 정적 위치(naturalTopNow)"를 뺀 만큼만 transform으로 옮기면 됨.
+                // 이렇게 해야 자리 바뀜으로 정적 위치가 훌쩍 이동해도 화면에서 튀지 않고 손가락에 계속 붙어있음.
+                const transformDeltaY = (startRowTop + fingerDelta) - naturalTopNow;
+                row.style.transform = `translateY(${transformDeltaY}px) scale(1.02)`;
 
                 const container = document.getElementById("summary-list-container");
                 const siblings = Array.from(container.children).filter(el => el !== row);
-                const currentCenter = startRowTop + deltaY + row.offsetHeight / 2;
+                const currentCenter = startRowTop + fingerDelta + row.offsetHeight / 2;
 
                 for (const sib of siblings) {
                     const rect = sib.getBoundingClientRect();
@@ -1425,15 +1424,24 @@
                     const sibIndex = itemOrder.indexOf(sibId);
                     const rowIndex = itemOrder.indexOf(rowId);
 
+                    let swapped = false;
                     if (rowIndex < sibIndex && currentCenter > sibCenter) {
                         itemOrder.splice(rowIndex, 1);
                         itemOrder.splice(sibIndex, 0, rowId);
                         container.insertBefore(row, sib.nextSibling);
-                        break;
+                        swapped = true;
                     } else if (rowIndex > sibIndex && currentCenter < sibCenter) {
                         itemOrder.splice(rowIndex, 1);
                         itemOrder.splice(sibIndex, 0, rowId);
                         container.insertBefore(row, sib);
+                        swapped = true;
+                    }
+
+                    if (swapped) {
+                        // 자리를 옮긴 직후 정적 위치가 바뀌므로, transform을 잠깐 없앤 채로 다시 측정해둠
+                        // (다음 touchmove에서 이 값을 기준으로 다시 정확한 transform이 계산됨)
+                        row.style.transform = "none";
+                        naturalTopNow = row.getBoundingClientRect().top;
                         break;
                     }
                 }
