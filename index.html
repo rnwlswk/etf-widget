@@ -15,6 +15,11 @@
 
     <link rel="manifest" href="manifest.json">
 
+    <!-- 폰트 및 외부 도메인 사전 연결 (성능 최적화) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap');
@@ -47,7 +52,7 @@
 </head>
 <body class="text-slate-900 min-h-screen flex flex-col justify-between items-center p-4 select-none">
 
-    <!-- 당겨서 새로고침 인디케이터 (화면 위쪽에서 아래로 당기면 나타남) -->
+    <!-- 당겨서 새로고침 인디케이터 -->
     <div id="pull-refresh-indicator" class="fixed top-3 left-1/2 z-40 rounded-full bg-blue-600 text-white shadow-lg flex items-center gap-2 px-4 py-2.5 opacity-0 pointer-events-none" style="transform: translate(-50%, -40px);">
         <svg id="pull-refresh-icon" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17" />
@@ -61,7 +66,7 @@
         <main class="flex-1 min-h-0 w-full relative">
             <div id="main-slider" class="flex w-full h-full overflow-x-auto snap-x snap-mandatory no-scrollbar">
 
-                <!-- 요약 리스트 슬라이드 (렌더링 시 두 번째 위치로 재배치됨) -->
+                <!-- 요약 리스트 슬라이드 -->
                 <div id="summary-slide" class="w-full h-full shrink-0 snap-center flex flex-col justify-start space-y-2 p-0.5">
                     <div class="px-2 flex items-center justify-between gap-1.5 shrink-0">
                         <div class="flex items-center gap-1.5 text-[14px] text-slate-600 font-mono">
@@ -76,7 +81,7 @@
                         </div>
                     </div>
                     <div class="flex-1 overflow-y-auto no-scrollbar space-y-[3px] pb-2" id="summary-list-container">
-                        <!-- 자산 목록이 여기에 동적으로 추가됩니다 -->
+                        <!-- 자산 목록이 동적으로 생성됨 -->
                     </div>
                     <div class="shrink-0 bg-white border border-slate-300 rounded-2xl p-3 flex justify-between items-center gap-3 mb-16">
                         <div>
@@ -104,7 +109,7 @@
         </div>
     </div>
 
-    <!-- 차트 확대보기 모달 - 화면을 최대한 활용하는 바텀시트 형태 -->
+    <!-- 차트 확대보기 모달 -->
     <div id="chart-modal" class="hidden fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4" onclick="if(event.target===this) closeChartModal();">
         <div class="bg-white rounded-2xl w-full max-w-md h-[59vh] max-h-[59vh] shadow-2xl flex flex-col p-4">
             <div class="flex justify-between items-center mb-2 shrink-0">
@@ -131,7 +136,6 @@
             </div>
             <div id="add-etf-search-results" class="flex-1 min-h-0 overflow-y-auto space-y-1.5 mt-2"></div>
 
-            <!-- 검색이 안 될 때를 위한 직접 입력(코드+이름) 폴백 -->
             <details class="mt-2 shrink-0">
                 <summary class="text-[12px] text-slate-400 font-bold cursor-pointer select-none">검색이 안 되면 코드로 직접 추가</summary>
                 <div class="space-y-2 mt-2">
@@ -155,12 +159,8 @@
     </div>
 
     <script>
-        // 백엔드 프록시 서버 주소 (배포된 Render 서버 URL)
         const MY_SERVER = "https://kis-proxy-server-k0g3.onrender.com";
 
-        // 국내 정규장 시간(평일 09:00~15:30 KST) 여부 - 공휴일까지는 반영 못함(달력 데이터 없음), 주말/시간대만 체크
-        // 서버(KIS 휴장일조회 API)에서 받아온 "오늘이 실제 개장일인지" 캐시
-        // null = 아직 확인 전(주말/시간대 체크만으로 판단), true/false = 확인 완료
         let isTodayTradingDayCache = null;
 
         async function refreshTradingDayStatus() {
@@ -171,12 +171,12 @@
                     isTodayTradingDayCache = data.isTradingDay;
                 }
             } catch (e) {
-                console.warn("휴장일 조회 오류:", e); // 실패하면 그냥 요일/시간 체크만으로 동작 (fail-open)
+                console.warn("휴장일 조회 오류:", e);
             }
         }
 
         function isRegularMarketHoursNow() {
-            if (isTodayTradingDayCache === false) return false; // 임시공휴일 등 KIS가 휴장으로 확인해준 날
+            if (isTodayTradingDayCache === false) return false;
 
             const parts = new Intl.DateTimeFormat("en-US", {
                 timeZone: "Asia/Seoul", hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit"
@@ -189,9 +189,6 @@
             return totalMin >= 9 * 60 && totalMin <= 15 * 60 + 30;
         }
 
-        // 분봉을 지금 불러와도 되는지 여부. 서버 필터가 15:30 상한을 걸어주므로 장마감 후에도
-        // 그날 완성된 분봉을 그대로 안전하게 보여줄 수 있어서, 09:00 이전(아직 데이터가 없음)과
-        // 확인된 휴장일/주말만 막는다 (KIS 분봉 API는 "당일" 전용이라 전날 데이터로 대체할 수는 없음)
         function canFetchIntradayNow() {
             if (isTodayTradingDayCache === false) return false;
 
@@ -206,7 +203,6 @@
             return totalMin >= 9 * 60;
         }
 
-        // 분봉을 못 불러오는 상태일 때 보여줄 안내 문구
         function intradayUnavailableLabel() {
             if (!canFetchIntradayNow()) {
                 const parts = new Intl.DateTimeFormat("en-US", {
@@ -221,8 +217,6 @@
             return "분봉";
         }
 
-        // 09:00 이전/휴장일처럼 당일 분봉을 못 가져올 때의 대체 화면.
-        // 서버에 저장해둔 마지막 거래일 스냅샷이 있으면 그걸 보여주고, 없으면 "데이터 없음" 안내만 표시
         async function renderIntradayFallbackHtml(itemObj, height, fillParent) {
             try {
                 const res = await fetch(`${MY_SERVER}/api/kis-minute-chart-snapshot/${itemObj.ticker}`);
@@ -241,11 +235,6 @@
             return generateCandleChartSvg(null, intradayUnavailableLabel(), height, fillParent);
         }
 
-        // 종목 하나의 당일 분봉을 가져온다. 이미 캐시돼 있으면 그대로 반환하고,
-        // 이미 같은 종목을 불러오는 중이면(상세카드 미리보기 로딩과 모달 오픈이 겹치는 경우 등)
-        // 새로 요청을 또 보내지 않고 진행 중이던 그 요청 결과를 같이 기다린다 (중복 호출 방지)
-        // 오늘(KST 기준) 날짜를 "YYYYMMDD"로. 탭을 하루 넘게 켜두고 있어도 날짜가 바뀌면
-        // 어제 분봉 캐시를 오늘 것처럼 계속 보여주지 않도록 이걸로 캐시 유효성을 확인한다
         function getKstTodayYmdFrontend() {
             const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
             return parts.replace(/-/g, "");
@@ -257,7 +246,6 @@
                 return itemObj.minuteChartCache;
             }
             if (itemObj.minuteChartCacheDate && itemObj.minuteChartCacheDate !== today) {
-                // 날짜가 바뀌었으면 어제 캐시는 버림 (진행 중이던 요청도 어제 기준이었을 수 있어 같이 초기화)
                 itemObj.minuteChartCache = null;
                 itemObj.minuteChartLoadingPromise = null;
             }
@@ -286,7 +274,6 @@
             return itemObj.minuteChartLoadingPromise;
         }
 
-        // 종목 하나의 "빈 틀"을 만드는 함수 - 기본 7종목이든, 사용자가 추가한 종목이든 동일한 모양으로 생성
         function createEtfItem({ id, name, ticker, isGold }) {
             return {
                 id, name, ticker, isGold: !!isGold,
@@ -297,7 +284,6 @@
             };
         }
 
-        // 종목 데이터베이스 (분배율 필드는 제외, 분배금/지급일은 유지)
         const ETF_DATABASE = [
             { id: "TIGER_NSQ100_DAILY_CC", name: "TIGER 미국나스닥100타겟데일리커버드콜", ticker: "486290", isGold: false },
             { id: "TIGER_SP500_DAILY_CC", name: "TIGER 미국S&P500타겟데일리커버드콜", ticker: "482730", isGold: false },
@@ -308,13 +294,10 @@
             { id: "GOLD", name: "KRX 금 현물", ticker: "M04020000", isGold: true }
         ].map(createEtfItem);
 
-        // 사용자가 +/- 버튼으로 추가/삭제한 목록을 이 브라우저에 저장해서, 다음에 앱을 열어도 유지되게 함
         const ETF_LIST_STORAGE_KEY = "customEtfList";
 
         function saveEtfListToStorage() {
             try {
-                // ETF_DATABASE 자체의 원래 순서가 아니라, 드래그로 정한 표시 순서(itemOrder) 그대로 저장해야
-                // 다음에 앱을 열어도 재배치한 자리가 유지됨
                 const minimal = getOrderedItems().map(i => ({ id: i.id, name: i.name, ticker: i.ticker, isGold: i.isGold }));
                 localStorage.setItem(ETF_LIST_STORAGE_KEY, JSON.stringify(minimal));
             } catch (e) {
@@ -335,8 +318,6 @@
             }
         }
 
-        // 서버(relay_server.js)도 이 종목 목록을 알아야 장마감 후 분봉 자동 스냅샷 대상에 포함시킬 수 있어서,
-        // 목록이 바뀔 때마다(추가/삭제/최초 로드) 통째로 보내서 서버 쪽 목록도 맞춰준다
         async function syncTickerListToServer() {
             try {
                 await fetch(`${MY_SERVER}/api/ticker-list`, {
@@ -349,20 +330,16 @@
             }
         }
 
-        // 계산기 탭에서 입력한 보유 주식수 (세션 메모리에만 보관 - 새로고침 시에도 값 유지)
         const userShares = {};
 
-        // 종목 표시 순서 (드래그로 재배치한 결과, 세션 메모리에만 보관)
         let itemOrder = ETF_DATABASE.map(item => item.id);
         function getOrderedItems() {
             return itemOrder.map(id => ETF_DATABASE.find(item => item.id === id)).filter(Boolean);
         }
-        let bulkShareValue = ""; // "전체 종목 동일 주식수" 입력값 (새로고침 후에도 유지)
+        let bulkShareValue = "";
 
-        // 직전 새로고침 때의 가격을 기억해뒀다가, 이번에 바뀐 카드만 살짝 반짝이게 하는 용도
         const lastKnownPrices = {};
 
-        // 글로벌 지수/환율/금 (야후 파이낸스 기반 - KIS와 별개의 백엔드 라우트)
         const GLOBAL_INDEX_LIST = [
             { key: "nasdaq100", name: "나스닥 100" },
             { key: "sp500", name: "S&P 500" },
@@ -372,7 +349,6 @@
             { key: "usdkrw", name: "원/달러 환율" }
         ].map(item => ({ ...item, price: null, previousClose: null, currency: null, dailyChartCache: {} }));
 
-        // 상태 점(dot) + 텍스트 스타일 프리셋
         const STATUS_STYLES = {
             loading:  { dot: "bg-blue-500 animate-ping", text: "단일 통신 요청 중" },
             success:  { dot: "bg-emerald-500",           text: "LIVE (실시간)" },
@@ -388,7 +364,6 @@
             return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
         }
 
-        // 숫자 카운트업 애니메이션: fromValue -> toValue로 스르륵 굴러가며 변함
         function animateCountUp(el, fromValue, toValue, suffix = "", duration = 700) {
             if (!el || fromValue === null || fromValue === undefined || fromValue === toValue) {
                 if (el) el.innerText = formatNumber(Math.round(toValue)) + suffix;
@@ -397,7 +372,7 @@
             const start = performance.now();
             function step(now) {
                 const progress = Math.min(1, (now - start) / duration);
-                const eased = 1 - Math.pow(1 - progress, 3); // ease-out
+                const eased = 1 - Math.pow(1 - progress, 3);
                 const current = fromValue + (toValue - fromValue) * eased;
                 el.innerText = formatNumber(Math.round(current)) + suffix;
                 if (progress < 1) requestAnimationFrame(step);
@@ -406,7 +381,6 @@
             requestAnimationFrame(step);
         }
 
-        // 직전 회차 대비 분배금 증감 화살표 (▲상승 / ▼하락 / -동일)
         function renderDivTrendArrow(trend) {
             if (trend === "up") return `<span class="text-rose-600">▲</span>`;
             if (trend === "down") return `<span class="text-blue-600">▼</span>`;
@@ -432,8 +406,8 @@
 
         function updateDots() {
             const dotsContainer = document.getElementById("slider-dots");
-            const summarySlide = 1; // 글로벌지수(0) 다음, 종목들 이전
-            const lastIndex = ETF_DATABASE.length + 2; // 글로벌지수(0) + 요약(1) + 종목들 + 계산기(마지막)
+            const summarySlide = 1;
+            const lastIndex = ETF_DATABASE.length + 2;
             dotsContainer.innerHTML = "";
             for (let i = 0; i <= lastIndex; i++) {
                 const dot = document.createElement("button");
@@ -474,14 +448,12 @@
             }
         }
 
-        // 상태 점/텍스트를 STATUS_STYLES 기준으로 갱신
         function applyStatus(mode) {
             const style = STATUS_STYLES[mode];
             document.getElementById("status-dot").className = `w-1.5 h-1.5 rounded-full shrink-0 ${style.dot}`;
             document.getElementById("status-text").innerText = style.text;
         }
 
-        // 종목 1건의 현재가/NAV/괴리율/시가총액 수신
         async function fetchPriceData(itemObj) {
             const priceRes = await fetch(`${MY_SERVER}/api/kis-data/${itemObj.ticker}`);
             if (!priceRes.ok) throw new Error("서버 연동 오류");
@@ -499,8 +471,6 @@
             itemObj.changeRate = isFall ? -Math.abs(changeRate) : Math.abs(changeRate);
             itemObj.prevClose = itemObj.price - itemObj.changeAmt;
 
-            // 시가총액: hts_avls(억원)를 우선 사용하고, 값이 없거나 0이면
-            // 상장(발행)좌수 x 현재가로 환산 시도. 그래도 없으면 null 처리 후 원본 응답을 콘솔에 남김
             const rawMCap = parseInt(out.hts_avls);
             if (!isNaN(rawMCap) && rawMCap > 0) {
                 itemObj.marketCap = rawMCap;
@@ -510,7 +480,6 @@
                     itemObj.marketCap = Math.round((shares * itemObj.price) / 100000000);
                 } else {
                     itemObj.marketCap = null;
-                    console.warn(`[${itemObj.ticker}] 시가총액 필드를 찾을 수 없습니다. 서버 응답 output:`, out);
                 }
             }
 
@@ -528,8 +497,6 @@
                 }
             }
 
-            // 최고/최저가 대비 위치: 금현물은 진짜 52주(w52_*), ETF는 연중(dryy_*) 필드를 사용
-            // (ETF API는 52주 필드를 제공하지 않고 연중 최고/최저만 제공함)
             if (itemObj.isGold) {
                 itemObj.rangeHigh = parseFloat(out.w52_hgpr) || null;
                 itemObj.rangeLow = parseFloat(out.w52_lwpr) || null;
@@ -543,7 +510,6 @@
             return true;
         }
 
-        // 종목 1건의 분배금(주당) / 지급(기준)일 수신 - 분배율(divi_rate)은 사용하지 않음
         async function fetchDividendData(itemObj) {
             try {
                 const res = await fetch(`${MY_SERVER}/api/kis-dividend/${itemObj.ticker}`);
@@ -560,7 +526,6 @@
                         ? `${rDate.slice(0, 4)}-${rDate.slice(4, 6)}-${rDate.slice(6, 8)}`
                         : "기록없음";
 
-                    // 직전 회차 분배금과 비교해서 상승/하락/동일 방향 계산
                     if (divData.previousData) {
                         const prevAmt = parseInt(divData.previousData.per_sto_divi_amt);
                         if (!isNaN(prevAmt) && !isNaN(dAmt)) {
@@ -572,7 +537,6 @@
                         itemObj.divTrend = null;
                     }
 
-                    // 최근 1년 전체 분배 이력 저장 (탭하면 모달로 보여줌)
                     itemObj.dividendHistory = Array.isArray(divData.history) ? divData.history : null;
                 } else {
                     itemObj.divAmtRaw = 0;
@@ -591,8 +555,6 @@
             }
         }
 
-        // ETF는 자체 API에 52주 데이터가 없어서, 일반 주식현재가 API로 진짜 52주 최고/최저를 별도 조회
-        // (금현물은 원래 쓰는 API 자체에 52주 필드가 있어서 이 호출이 필요 없음)
         async function fetch52WeekRange(itemObj) {
             try {
                 const res = await fetch(`${MY_SERVER}/api/kis-52week/${itemObj.ticker}`);
@@ -607,27 +569,24 @@
                     itemObj.rangeLow = low;
                     itemObj.rangeLabel = "52주";
                 }
-                // 실패하거나 값이 이상하면 fetchPriceData에서 이미 넣어둔 "연중" 값을 그대로 둠 (폴백)
             } catch (e) {
-                console.warn(`[${itemObj.ticker}] 52주 데이터 로드 오류(연중 데이터로 대체):`, e);
+                console.warn(`[${itemObj.ticker}] 52주 데이터 로드 오류:`, e);
             }
         }
 
-        // 최근 20거래일 일봉 종가 조회 (기존 네이버 분봉 이미지와는 별개로, 그 아래에 추가로 표시)
         async function fetchDailyChart(itemObj) {
             try {
                 const res = await fetch(`${MY_SERVER}/api/kis-daily-chart/${itemObj.ticker}`);
                 if (!res.ok) throw new Error("일봉 조회 서버 오류");
                 const data = await res.json();
                 if (!data.success || !Array.isArray(data.data)) throw new Error("일봉 데이터 없음");
-                itemObj.dailyChart = data.data; // [{date, open, high, low, close}, ...] 오래된 순 -> 최신 순
+                itemObj.dailyChart = data.data;
             } catch (e) {
                 console.warn(`[${itemObj.ticker}] 일봉 데이터 로드 오류:`, e);
                 itemObj.dailyChart = null;
             }
         }
 
-        // 주봉은 모달에서 "주봉" 탭을 눌렀을 때만 불러온다 (매 새로고침마다 미리 받을 필요는 없어서)
         async function fetchWeeklyChart(itemObj) {
             if (itemObj.weeklyChart && itemObj.weeklyChart.length >= 2) return itemObj.weeklyChart;
             try {
@@ -652,17 +611,15 @@
                 priceSuccess = false;
             }
 
-            // 서버 동시 부하를 줄이기 위해 후속 요청들은 현재가 요청이 끝난 뒤 순차 실행
             if (!itemObj.isGold) {
                 await fetchDividendData(itemObj);
                 await fetch52WeekRange(itemObj);
             }
-            await fetchDailyChart(itemObj); // 금현물 포함 전 종목 대상
+            await fetchDailyChart(itemObj);
 
             return priceSuccess;
         }
 
-        // 글로벌 지수/환율/금 1건 조회 (야후 파이낸스 경유)
         async function fetchGlobalIndex(itemObj) {
             try {
                 const res = await fetch(`${MY_SERVER}/api/global/${itemObj.key}`);
@@ -680,9 +637,6 @@
             }
         }
 
-        // 글로벌 지수 일봉 조회 - 첫 페이지에서 항목을 눌렀을 때만, 선택된 기간(1개월/1년)만 호출한다
-        // (전체 새로고침 때 6개 지수분을 한꺼번에 미리 받으면 KIS 초당 호출 제한(EGW00201)에 걸리기 쉬워서,
-        //  탭한 순간에만 요청하는 지연 로딩 방식으로 전환했고, 기간별로 캐시해서 다시 볼 땐 재요청 안 함)
         async function fetchGlobalIndexDailyChart(itemObj, range) {
             try {
                 const res = await fetch(`${MY_SERVER}/api/global-daily-chart/${itemObj.key}?range=${range}`);
@@ -729,13 +683,11 @@
             title.innerText = `${itemObj.name} · ${chartLabel}`;
             modal.classList.remove("hidden");
 
-            // 1년 뷰는 일봉 250개를 그대로 캔들로 그리면 봉이 안 보일 정도로 얇아지므로 주봉(약 50개)으로 압축해서 그림
             const toCandles = (daily) => range === "1y" ? aggregateToWeeklyCandles(daily) : daily;
 
             const toggleHtml = `<div class="shrink-0">${renderGlobalChartRangeToggle(key, range)}</div>`;
             const cached = itemObj.dailyChartCache && itemObj.dailyChartCache[range];
 
-            // 이미 받아둔 일봉이 있으면 재요청 없이 바로 표시 (KIS 초당 호출 제한 방지)
             if (cached && cached.length >= 2) {
                 content.innerHTML = toggleHtml + `<div class="flex-1 min-h-0">${generateCandleChartSvg(toCandles(cached), chartLabel, 260, true)}</div>`;
                 return;
@@ -749,7 +701,6 @@
 
             await fetchGlobalIndexDailyChart(itemObj, range);
 
-            // 로딩되는 사이 사용자가 모달을 닫았거나 다른 항목/기간으로 바꿨으면 반영하지 않음
             if (!modal.classList.contains("hidden") && globalChartActiveKey === key && globalChartActiveRange === range) {
                 content.innerHTML = toggleHtml + `<div class="flex-1 min-h-0">${generateCandleChartSvg(toCandles(itemObj.dailyChartCache[range]), chartLabel, 260, true)}</div>`;
             }
@@ -759,8 +710,6 @@
             await renderGlobalChartModal(key, "1m");
         }
 
-        // 금현물(KRX) 가격을 국제금(USD/oz) x 환율로 환산해 괴리율 계산
-        // 1트로이온스 = 31.1034768g 기준
         function updateGoldDiscrepancy() {
             const goldItem = ETF_DATABASE.find(item => item.isGold);
             const goldGlobal = GLOBAL_INDEX_LIST.find(item => item.key === "gold");
@@ -783,8 +732,6 @@
             }
         }
 
-        // 한 번에 전부 병렬로 받아서 다 끝나야 화면이 갱신되던 방식 대신,
-        // 슬라이드 순서대로(요약 -> 글로벌지수 -> 종목 상세 하나씩) 받아지는 대로 바로바로 화면에 반영한다
         async function executeFullUpdate() {
             if (isRefreshing) return;
             isRefreshing = true;
@@ -795,19 +742,13 @@
             showProgressToast("KIS 중계 서버에서 실시간 데이터를 받아옵니다...", "blue");
 
             try {
-                // 1단계: 1번째 슬라이드(요약)에 필요한 전 종목 기본 시세부터 받아서 바로 표시
                 const priceResults = await Promise.all(ETF_DATABASE.map(fetchPriceDataSafe));
                 renderApp();
 
-                // 2단계: 2번째 슬라이드(글로벌 지수) 표시
                 await Promise.all(GLOBAL_INDEX_LIST.map(fetchGlobalIndex));
                 updateGoldDiscrepancy();
                 renderApp();
 
-                // 3단계: 종목 상세 슬라이드에 필요한 나머지 정보(배당/52주/일봉)를 종목별로 하나씩 순서대로 받아와서
-                // 그 종목이 끝날 때마다 바로 반영 (전부 끝날 때까지 기다리지 않음)
-                // 어차피 종목을 하나씩 순서대로 받아오는 김에, 분봉도 여기서 같이 받아온다
-                // (7종목이 동시에 몰리는 게 아니라 한 종목씩 순서대로라 KIS 호출 부담이 없음)
                 for (const itemObj of ETF_DATABASE) {
                     try {
                         if (!itemObj.isGold) {
@@ -851,7 +792,6 @@
                 pullIcon.classList.remove("animate-spin");
                 isRefreshing = false;
 
-                // 당겨서 새로고침으로 시작된 경우, 완료 후 인디케이터를 다시 숨기고 문구도 원상복구
                 const indicator = document.getElementById("pull-refresh-indicator");
                 const pullText = document.getElementById("pull-refresh-text");
                 indicator.style.transform = "translate(-50%, -40px)";
@@ -860,9 +800,6 @@
             }, 1000);
         }
 
-        // 일봉 배열을 5개씩 묶어서 대략적인 "주봉" 캔들로 압축 (달력 기준 주 정렬 대신, 거래일 5개=1주 근사)
-        // 1년(약 250개) 치 일봉을 캔들로 그대로 그리면 봉 하나가 1px도 안 돼서 안 보이므로,
-        // 1년 뷰에서는 이렇게 묶은 약 50개 주봉으로 캔들을 그린다
         function aggregateToWeeklyCandles(dailyCandles) {
             if (!dailyCandles || dailyCandles.length === 0) return [];
             const CHUNK = 5;
@@ -870,7 +807,7 @@
             for (let i = 0; i < dailyCandles.length; i += CHUNK) {
                 const chunk = dailyCandles.slice(i, i + CHUNK);
                 weekly.push({
-                    date: chunk[chunk.length - 1].date, // 그 주의 마지막 거래일을 라벨로 사용
+                    date: chunk[chunk.length - 1].date,
                     open: chunk[0].open,
                     close: chunk[chunk.length - 1].close,
                     high: Math.max(...chunk.map(c => c.high)),
@@ -880,8 +817,6 @@
             return weekly;
         }
 
-        // 캔들차트(OHLC) 그리기 - 일봉/주봉 공용 함수. 몸통(시가~종가) + 꼬리(고가~저가)를 실제로 그림
-        // fillParent가 true면 고정 픽셀 높이 대신 부모 요소(모달의 남은 공간)를 꽉 채운다 (height는 내부 비율 계산용으로만 쓰임)
         function generateCandleChartSvg(candles, label, height = 92, fillParent = false) {
             const sizeAttrs = fillParent ? { class: "h-full", style: "" } : { class: "", style: `height:${height}px;` };
 
@@ -893,34 +828,28 @@
                 `;
             }
 
-            // 몸통뿐 아니라 꼬리(고가/저가)까지 화면 안에 들어와야 하므로 high/low 기준으로 축 범위를 잡음
             const highs = candles.map(c => c.high ?? c.close);
             const lows = candles.map(c => c.low ?? c.close);
             const rawMax = Math.max(...highs);
             const rawMin = Math.min(...lows);
             const rawRange = (rawMax - rawMin) || 1;
 
-            // 실제 값 범위 위아래로 여백(12%씩)을 둬서, 봉이 화면 끝까지 꽉 차서 위아래로 과장돼 보이는 걸 완화
             const PADDING_RATIO = 0.12;
             const maxVal = rawMax + rawRange * PADDING_RATIO;
             const minVal = rawMin - rawRange * PADDING_RATIO;
             const range = maxVal - minVal;
 
-            // 위(라벨 칩)/아래(날짜 라벨) 공간을 넉넉히 확보해서 글자가 그래프나 서로와 겹치지 않게 함
             const PAD_TOP = Math.round(height * 0.07);
             const PAD_BOTTOM = Math.round(height * 0.14);
             const plotH = height - PAD_TOP - PAD_BOTTOM;
             const chartW = 300;
-            const RIGHT_MARGIN = 54; // 오른쪽 가격 라벨 영역 너비
+            const RIGHT_MARGIN = 54;
             const stepX = chartW / candles.length;
-            const bodyWidth = Math.max(1.2, Math.min(stepX * 0.62, 14)); // 봉이 너무 많을 때(1년) 최소 굵기 보장
+            const bodyWidth = Math.max(1.2, Math.min(stepX * 0.62, 14));
             const scaleY = (v) => PAD_TOP + (1 - (v - minVal) / range) * plotH;
 
-            // 작은 미리보기(fillParent=false, 60px)에서는 라벨이 그래프를 가릴 만큼 촘촘해지므로 3개/2개로 축소,
-            // 모달(fillParent=true, 260px)에서는 그대로 5개/5개 유지
             const compact = !fillParent;
 
-            // 가격 격자선/라벨 - compact면 3단계(최고/중간/최저), 아니면 5단계
             const GRID_COUNT = compact ? 2 : 4;
             const gridLevels = Array.from({ length: GRID_COUNT + 1 }, (_, i) => maxVal - (range * i) / GRID_COUNT);
             const gridLines = gridLevels.map(v => {
@@ -928,7 +857,6 @@
                 return `<line x1="0" y1="${y.toFixed(1)}" x2="${chartW}" y2="${y.toFixed(1)}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,4" />`;
             }).join("");
 
-            // 캔들 하나씩: 꼬리(고가-저가 얇은 세로선) + 몸통(시가-종가 사각형). 상승 빨강 / 하락 파랑 (국내 관행)
             const candleShapes = candles.map((c, i) => {
                 const cx = (i + 0.5) * stepX;
                 const isUp = c.close >= c.open;
@@ -938,7 +866,7 @@
                 const yOpen = scaleY(c.open ?? c.close);
                 const yClose = scaleY(c.close);
                 const bodyTop = Math.min(yOpen, yClose);
-                const bodyHeight = Math.max(Math.abs(yClose - yOpen), 1); // 시가=종가(도지)여도 최소 1px 두께로 보이게
+                const bodyHeight = Math.max(Math.abs(yClose - yOpen), 1);
 
                 return `
                     <line x1="${cx.toFixed(1)}" y1="${yHigh.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${yLow.toFixed(1)}" stroke="${color}" stroke-width="1.4" />
@@ -946,8 +874,6 @@
                 `;
             }).join("");
 
-            // 가격 라벨은 SVG 밖 HTML로 배치 (SVG를 비율 무시하고 늘려서 그리다 보니 글자가 SVG 안에 있으면 찌그러짐)
-            // 배경 칩(bg-white)을 둬서 격자선 위에서도 잘 보이게 함
             const priceLabelClass = compact
                 ? "text-[9px] font-bold text-slate-500 bg-white/90 px-0.5 rounded"
                 : "text-[11px] font-bold text-slate-600 bg-white/95 px-1 rounded";
@@ -956,7 +882,6 @@
                 return `<span class="absolute ${priceLabelClass}" style="top:${yPct}%; right:3px; transform: translateY(-50%);">${formatNumber(Math.round(v))}</span>`;
             }).join("");
 
-            // 8자리(YYYYMMDD)는 일봉/주봉, 6자리(HHMMSS)는 분봉
             const fmtDate = (d) => {
                 if (!d) return "";
                 if (d.length === 8) return `${d.slice(4, 6)}/${d.slice(6, 8)}`;
@@ -964,7 +889,6 @@
                 return d;
             };
 
-            // 하단 날짜/시간 라벨 - compact면 양끝 2개만(기존처럼), 아니면 양끝 포함 5개를 고르게 분포
             const LABEL_COUNT = compact ? 2 : Math.min(5, candles.length);
             const labelIndices = Array.from({ length: LABEL_COUNT }, (_, i) =>
                 Math.round((i * (candles.length - 1)) / (LABEL_COUNT - 1))
@@ -975,7 +899,7 @@
             const dateLabels = labelIndices.map((idx, i) => {
                 const isFirst = i === 0;
                 const isLast = i === labelIndices.length - 1;
-                const f = (idx * stepX + stepX / 2) / chartW; // 0~1, 해당 봉의 x축 비율 위치
+                const f = (idx * stepX + stepX / 2) / chartW;
                 const leftCalc = `calc(${(f * 100).toFixed(2)}% - ${(f * RIGHT_MARGIN).toFixed(1)}px)`;
                 const alignStyle = isFirst
                     ? `left:2px;`
@@ -998,13 +922,7 @@
             `;
         }
 
-        // 분봉 모달을 여는 동안 사용자가 다른 종목/탭으로 바꿨는지 추적 (응답 늦게 와도 엉뚱한 화면에 안 덮어쓰게)
         let intradayActiveTicker = null;
-
-        // 차트 탭하면 확대보기 모달 오픈 (분봉/일봉 공용)
-        // 분봉은 실시간성 데이터라 캐시 없이 열 때마다 서버에서 새로 받아온다 (KIS 1분봉 API를 09:00까지 페이지네이션해서 합친 결과)
-        // 종목 상세의 일봉 확대보기 - 글로벌 지수와 같은 방식으로 일봉/주봉 토글 제공
-        // (여기 주봉은 근사 압축이 아니라 KIS가 직접 내려주는 진짜 달력 기준 주봉)
         let etfChartActiveTicker = null;
         let etfChartActivePeriod = "D";
 
@@ -1039,12 +957,10 @@
             const toggleHtml = `<div class="shrink-0">${renderEtfChartPeriodToggle(ticker, period)}</div>`;
 
             if (period === "D") {
-                // 일봉은 새로고침 때 이미 받아둔 상태라 바로 표시
                 content.innerHTML = toggleHtml + `<div class="flex-1 min-h-0">${generateCandleChartSvg(itemObj.dailyChart, "일봉", 260, true)}</div>`;
                 return;
             }
 
-            // 주봉은 "주봉" 탭을 눌렀을 때만 불러옴
             if (itemObj.weeklyChart && itemObj.weeklyChart.length >= 2) {
                 content.innerHTML = toggleHtml + `<div class="flex-1 min-h-0">${generateCandleChartSvg(itemObj.weeklyChart, "주봉", 260, true)}</div>`;
                 return;
@@ -1058,7 +974,6 @@
 
             const weeklyData = await fetchWeeklyChart(itemObj);
 
-            // 로딩되는 사이 모달을 닫았거나 다른 종목/탭으로 바꿨으면 반영하지 않음
             if (!modal.classList.contains("hidden") && etfChartActiveTicker === ticker && etfChartActivePeriod === period) {
                 content.innerHTML = toggleHtml + `<div class="flex-1 min-h-0">${generateCandleChartSvg(weeklyData, "주봉", 260, true)}</div>`;
             }
@@ -1075,7 +990,7 @@
             modal.classList.remove("hidden");
 
             if (type === "daily") {
-                intradayActiveTicker = null; // 분봉 로딩 응답 추적 해제
+                intradayActiveTicker = null;
                 await renderEtfChartModal(ticker, "D");
                 return;
             }
@@ -1083,14 +998,11 @@
             intradayActiveTicker = ticker;
             title.innerText = `${itemObj.name} · 분봉`;
 
-            // 상세카드 미리보기에서 이미 오늘자 분봉을 받아둔 상태라면, 그걸 그대로 확대해서 보여줄 뿐 다시 부를 필요 없음
             if (itemObj.minuteChartCache && itemObj.minuteChartCache.length >= 2 && itemObj.minuteChartCacheDate === getKstTodayYmdFrontend()) {
                 content.innerHTML = generateCandleChartSvg(itemObj.minuteChartCache, "분봉", 260, true);
                 return;
             }
 
-            // 09:00 이전이거나 확인된 휴장일/주말이면 새로 불러오지 않음 (KIS 분봉 API가 당일 전용이라 전날 대체 불가)
-            // 대신 저장해둔 마지막 거래일 스냅샷이 있으면 그걸, 없으면 예전처럼 네이버 차트 이미지로 대체
             if (!canFetchIntradayNow()) {
                 content.innerHTML = `
                     <div class="w-full h-full bg-white rounded-2xl flex items-center justify-center border border-slate-300 mt-1.5">
@@ -1107,8 +1019,6 @@
                 </div>
             `;
 
-            // 최근 구간만 빠르게 받아서 먼저 보여줌 (체감 속도 개선용) - 단, 이미 다른 곳(상세카드 미리보기 등)에서
-            // 같은 종목 전체 분봉을 불러오는 중이면 굳이 별도로 또 부르지 않고 그 결과를 그냥 기다림
             if (!itemObj.minuteChartLoadingPromise) {
                 try {
                     const quickRes = await fetch(`${MY_SERVER}/api/kis-minute-chart/${ticker}?quick=1`);
@@ -1118,17 +1028,15 @@
                         content.innerHTML = generateCandleChartSvg(quickData.data, "분봉(최근)", 260, true);
                     }
                 } catch (e) {
-                    console.warn(`[${ticker}] 분봉 빠른조회 오류:`, e); // 실패해도 아래 전체 조회에서 재시도되므로 무시
+                    console.warn(`[${ticker}] 분봉 빠른조회 오류:`, e);
                 }
             }
 
-            // 당일 전체 분봉을 이어서 받아와 교체 - 진행 중인 요청이 있으면 새로 안 부르고 그 결과를 같이 기다림 (중복 호출 방지)
             const minuteData = await ensureMinuteChartLoaded(itemObj);
 
             const thumbEl = document.getElementById(`intraday-thumb-${ticker}`);
             if (thumbEl && minuteData) thumbEl.innerHTML = generateCandleChartSvg(minuteData, "분봉", 60);
 
-            // 로딩되는 사이 모달을 닫았거나 다른 종목/탭으로 바꿨으면 반영하지 않음
             if (!modal.classList.contains("hidden") && intradayActiveTicker === ticker) {
                 content.innerHTML = generateCandleChartSvg(minuteData, "분봉", 260, true);
             }
@@ -1138,7 +1046,6 @@
             document.getElementById("chart-modal").classList.add("hidden");
         }
 
-        // 종목 추가
         function openAddEtfModal() {
             document.getElementById("add-etf-search").value = "";
             document.getElementById("add-etf-search-results").innerHTML = "";
@@ -1158,8 +1065,7 @@
             el.classList.remove("hidden");
         }
 
-        // 종목명으로 검색해서 후보 목록을 보여줌 (네이버 자동완성 비공식 API 기반)
-        let lastEtfSearchResults = []; // 검색 결과를 저장해뒀다가 버튼 클릭 시 인덱스로 참조 (이름에 따옴표가 섞여도 안전하게)
+        let lastEtfSearchResults = [];
 
         async function searchEtfByName() {
             const q = document.getElementById("add-etf-search").value.trim();
@@ -1198,7 +1104,6 @@
             }
         }
 
-        // 검색 결과 항목을 탭하면 그 코드+이름으로 바로 추가
         function addEtfFromSearchResult(index) {
             const r = lastEtfSearchResults[index];
             if (!r) return;
@@ -1207,8 +1112,6 @@
             submitAddEtf();
         }
 
-
-        // 종목코드로 KIS에 현재가를 조회해서, 그 응답에 같이 들어있는 종목명(hts_kor_isnm)을 가져옴
         async function lookupEtfName(ticker) {
             try {
                 const res = await fetch(`${MY_SERVER}/api/kis-data/${ticker}`);
@@ -1226,7 +1129,7 @@
             const ticker = document.getElementById("add-etf-ticker").value.trim().toUpperCase();
             const manualName = document.getElementById("add-etf-name").value.trim();
 
-            if (!/^[0-9A-Z]{6}$/.test(ticker)) return showAddEtfError("종목코드는 숫자/영문 6자리여야 해요. (예: 458730, 0219E0)");
+            if (!/^[0-9A-Z]{6}$/.test(ticker)) return showAddEtfError("종목코드는 숫자/영문 6자리여야 해요. (예: 458730)");
             if (ETF_DATABASE.some(i => i.ticker === ticker)) return showAddEtfError("이미 추가된 종목코드예요.");
 
             const submitBtn = document.getElementById("add-etf-submit-btn");
@@ -1241,18 +1144,17 @@
             }
 
             if (!name) {
-                return showAddEtfError("종목명을 자동으로 못 찾았어요. 위 종목명 칸에 직접 입력해주세요.");
+                return showAddEtfError("종목명을 자동으로 못 찾았어요. 직접 입력해주세요.");
             }
 
             const newItem = createEtfItem({ id: `custom_${ticker}`, name, ticker, isGold: false });
             ETF_DATABASE.push(newItem);
-            itemOrder.push(newItem.id); // 드래그 순서 배열에도 반영해야 목록에 보임
+            itemOrder.push(newItem.id);
             saveEtfListToStorage();
             syncTickerListToServer();
             closeAddEtfModal();
             renderApp();
 
-            // 추가한 종목의 실제 데이터를 바로 받아와서 채워넣음
             try {
                 await fetchPriceDataSafe(newItem);
                 await fetchDividendData(newItem);
@@ -1264,7 +1166,6 @@
             renderApp();
         }
 
-        // 종목 삭제
         function openRemoveEtfModal() {
             const listEl = document.getElementById("remove-etf-list");
             listEl.innerHTML = ETF_DATABASE.map(item => `
@@ -1285,14 +1186,13 @@
             if (idx === -1) return;
             ETF_DATABASE.splice(idx, 1);
             const orderIdx = itemOrder.indexOf(id);
-            if (orderIdx !== -1) itemOrder.splice(orderIdx, 1); // 드래그 순서 배열에서도 제거
+            if (orderIdx !== -1) itemOrder.splice(orderIdx, 1);
             saveEtfListToStorage();
             syncTickerListToServer();
-            openRemoveEtfModal(); // 목록을 다시 그려서 방금 지운 항목이 빠지게 함
+            openRemoveEtfModal();
             renderApp();
         }
 
-        // "주당 분배금" 탭하면 최근 1년 전체 분배 이력을 모달로 보여줌 (기존 차트 모달 재사용)
         function openDividendHistoryModal(ticker) {
             const itemObj = ETF_DATABASE.find(i => i.ticker === ticker);
             if (!itemObj) return;
@@ -1321,7 +1221,6 @@
             modal.classList.remove("hidden");
         }
 
-        // 종목 데이터를 화면 표시용 값으로 가공 (요약/상세 화면 공용)
         function buildDisplayValues(itemObj) {
             const hasValue = itemObj.price !== null;
             const view = {
@@ -1359,7 +1258,6 @@
                 view.displayMCap = itemObj.marketCap ? formatNumber(itemObj.marketCap) + "억 원" : "정보 없음";
             }
 
-            // 괴리율: ETF는 NAV 대비, 금현물은 국제금 환산가(KRW/g) 대비로 동일한 방식으로 계산됨
             if (itemObj.discrepancy !== null && itemObj.discrepancy !== undefined) {
                 const discVal = itemObj.discrepancy;
                 view.displayDiscrepancy = `${discVal > 0 ? "+" : ""}${discVal.toFixed(2)}%`;
@@ -1373,13 +1271,12 @@
             return view;
         }
 
-        // 요약 리스트 카드를 길게 누른 뒤 드래그하면 순서를 재배치함
         function attachDragHandlers(row, itemObj) {
             let pressTimer = null;
             let startY = 0;
             let dragging = false;
-            let startRowTop = 0;     // 드래그 시작 시점의 카드 원래(정적) 위치 - 절대 안 바뀜
-            let naturalTopNow = 0;   // 카드의 "현재" 정적 위치 - 자리 바뀔 때마다 다시 측정해서 갱신
+            let startRowTop = 0;
+            let naturalTopNow = 0;
 
             function onTouchStart(e) {
                 const touch = e.touches[0];
@@ -1403,12 +1300,7 @@
                 }
                 e.preventDefault();
 
-                // 손가락이 처음 잡은 지점에서 실제로 움직인 절대량 (자리 바뀜과 무관하게 항상 정확함)
                 const fingerDelta = touch.clientY - startY;
-
-                // 카드를 손가락 위치에 맞추려면, "원래 있어야 할 화면상 위치(startRowTop + fingerDelta)"에서
-                // "지금 이 카드의 정적 위치(naturalTopNow)"를 뺀 만큼만 transform으로 옮기면 됨.
-                // 이렇게 해야 자리 바뀜으로 정적 위치가 훌쩍 이동해도 화면에서 튀지 않고 손가락에 계속 붙어있음.
                 const transformDeltaY = (startRowTop + fingerDelta) - naturalTopNow;
                 row.style.transform = `translateY(${transformDeltaY}px) scale(1.02)`;
 
@@ -1438,8 +1330,6 @@
                     }
 
                     if (swapped) {
-                        // 자리를 옮긴 직후 정적 위치가 바뀌므로, transform을 잠깐 없앤 채로 다시 측정해둠
-                        // (다음 touchmove에서 이 값을 기준으로 다시 정확한 transform이 계산됨)
                         row.style.transform = "none";
                         naturalTopNow = row.getBoundingClientRect().top;
                         break;
@@ -1453,9 +1343,8 @@
                     dragging = false;
                     row.classList.remove("dragging-row");
                     row.style.transform = "";
-                    saveEtfListToStorage(); // 드래그로 바꾼 순서를 저장해둬야 다음에 앱을 열어도 유지됨
+                    saveEtfListToStorage();
                     syncTickerListToServer();
-                    // 재배치 이후엔 각 카드의 onclick에 박혀있던 인덱스가 낡은 값이 되므로 통째로 다시 그림
                     renderApp();
                     setTimeout(() => { row.dataset.suppressClick = ""; }, 50);
                 }
@@ -1467,7 +1356,6 @@
             row.addEventListener("touchcancel", onTouchEnd);
         }
 
-        // 요약 리스트 한 행 렌더링 (드래그 재배치 + 변동 시 카운트업/반짝임 포함)
         function renderSummaryRow(itemObj, index, view) {
             const row = document.createElement("div");
             row.onclick = () => { if (!row.dataset.suppressClick) slideTo(index + 2); };
@@ -1504,7 +1392,6 @@
                 </div>
             `;
 
-            // 숫자 카운트업: 직전 값이 있고 실제로 바뀐 경우에만 애니메이션 (첫 로딩 땐 바로 표시)
             if (didChange && itemObj.price !== null && prevPrice !== null) {
                 const priceEl = row.querySelector('[data-price-el="1"]');
                 animateCountUp(priceEl, prevPrice, itemObj.price, "원");
@@ -1531,7 +1418,6 @@
                 </div>
             `;
 
-            // 분배금/지급일은 카드 맨 아래에 배치 (금 현물은 미출력)
             const divBlock = itemObj.isGold ? '' : `
                 <div class="grid grid-cols-2 gap-3 text-[18px]">
                     <div onclick="openDividendHistoryModal('${itemObj.ticker}')" class="active-scale cursor-pointer flex flex-col justify-center items-start bg-slate-50 px-4 py-2 rounded-xl border border-slate-300">
@@ -1630,11 +1516,6 @@
             return slideCard;
         }
 
-        // 요약 리스트 하단의 "오늘 총 등락액 / 보유 총액" 계산 - 계산기에 입력된 보유수량을 그대로 재사용
-        // (금현물은 계산기에 수량 입력칸이 없어서 이 합계엔 포함되지 않음)
-        // 요약 리스트 하단의 "오늘 총 등락액 / 종목 총합" 계산
-        // 보유수량 입력 여부와 무관하게, 금현물을 뺀 나머지 종목들의 등락값/현재가를 그대로 더함
-        // (금현물은 가격 단위 자체가 워낙 커서(1kg 기준) 같이 더하면 숫자가 왜곡되므로 제외)
         function updatePortfolioSummary() {
             const changeEl = document.getElementById("portfolio-total-change");
             const valueEl = document.getElementById("portfolio-total-value");
@@ -1659,14 +1540,12 @@
             valueEl.innerText = formatNumber(Math.round(totalValue)) + "원";
         }
 
-        // 보유 주식수 입력 시 호출 - 값 저장 후 합계 재계산
         function handleShareInput(inputEl) {
             userShares[inputEl.dataset.ticker] = inputEl.value;
             updateCalculator();
             updatePortfolioSummary();
         }
 
-        // "전체 종목 동일 주식수" 입력창에 값을 넣으면, 모든 종목 입력창에 같은 값을 채워넣고 합계를 재계산
         function applyShareToAll(value) {
             bulkShareValue = value;
             ETF_DATABASE.filter(item => !item.isGold).forEach(itemObj => {
@@ -1678,7 +1557,6 @@
             updatePortfolioSummary();
         }
 
-        // 계산기 탭: 종목별 (분배금 × 보유주식수) 및 (현재가 × 보유주식수) 합계, 분배율 재계산
         function updateCalculator() {
             let totalValue = 0;
             let totalDividend = 0;
@@ -1706,7 +1584,6 @@
             rateEl.innerText = totalValue > 0 ? ((totalDividend / totalValue) * 100).toFixed(2) + "%" : "0.00%";
         }
 
-        // 계산기 슬라이드: 종목별 이번 분배금(주당) 표시 + 보유주식수 직접 입력 + 합계/비율 계산
         function renderCalculatorSlide() {
             const rows = ETF_DATABASE.filter(item => !item.isGold).map(itemObj => `
                 <div class="bg-slate-50 border border-slate-300 rounded-xl p-3 space-y-2">
@@ -1733,6 +1610,7 @@
             `).join("");
 
             const slide = document.createElement("div");
+            slide.id = "calculator-slide";
             slide.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5";
             slide.innerHTML = `
                 <div class="bg-white border border-slate-300 rounded-[1.5rem] p-3.5 flex-1 flex flex-col shadow-2xl relative overflow-y-auto no-scrollbar">
@@ -1771,8 +1649,6 @@
             return slide;
         }
 
-        // 글로벌 지수/환율/금 슬라이드
-        // 특정 타임존의 현재 요일/시:분(분 단위)을 반환 - 서머타임(DST)은 Intl API가 알아서 반영해줌
         function getTimeInZone(timeZone) {
             const parts = new Intl.DateTimeFormat("en-US", {
                 timeZone, hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit"
@@ -1782,20 +1658,18 @@
             return { weekday: map.weekday, minutes: parseInt(map.hour, 10) * 60 + parseInt(map.minute, 10) };
         }
 
-        // 종목별 정규장 여부 (거래소 현지시간 기준)
         function isMarketOpen(key) {
             if (key === "kospi" || key === "usdkrw") {
-                const t = getTimeInZone("Asia/Seoul"); // 코스피/원화환율: 09:00~15:30 KST, 평일
+                const t = getTimeInZone("Asia/Seoul");
                 if (t.weekday === "Sat" || t.weekday === "Sun") return false;
                 return t.minutes >= 9 * 60 && t.minutes < 15 * 60 + 30;
             }
             if (key === "sp500" || key === "nasdaq100" || key === "us30y") {
-                const t = getTimeInZone("America/New_York"); // 미국장: 09:30~16:00 ET, 평일
+                const t = getTimeInZone("America/New_York");
                 if (t.weekday === "Sat" || t.weekday === "Sun") return false;
                 return t.minutes >= 9 * 60 + 30 && t.minutes < 16 * 60;
             }
             if (key === "gold") {
-                // COMEX 금선물(Globex): 일 18:00 ~ 금 17:00 ET, 평일 17:00~18:00 매일 정지
                 const t = getTimeInZone("America/New_York");
                 if (t.weekday === "Sat") return false;
                 if (t.weekday === "Sun") return t.minutes >= 18 * 60;
@@ -1816,7 +1690,7 @@
                 let changeColorClass = "text-slate-500";
                 let barColor = "border-l-slate-300";
 
-                const decimals = 2; // 모든 지수 소수점 자리수 통일
+                const decimals = 2;
 
                 if (hasValue) {
                     displayPrice = itemObj.price.toLocaleString("ko-KR", { maximumFractionDigits: decimals, minimumFractionDigits: decimals });
@@ -1867,6 +1741,7 @@
             }).join("");
 
             const slide = document.createElement("div");
+            slide.id = "global-index-slide";
             slide.className = "w-full h-full shrink-0 snap-center flex flex-col justify-start p-1.5 space-y-0.5";
             slide.innerHTML = rows;
 
@@ -1889,17 +1764,16 @@
             return slide;
         }
 
-        // 렌더링 함수: 슬라이더 뷰 생성
         function renderApp() {
             const summaryContainer = document.getElementById("summary-list-container");
             const summarySlide = document.getElementById("summary-slide");
             const slider = document.getElementById("main-slider");
 
             summaryContainer.innerHTML = "";
-            slider.innerHTML = ""; // summarySlide는 JS 참조로 이미 잡아뒀으므로 재부착 가능
+            slider.innerHTML = "";
 
-            slider.appendChild(summarySlide);              // 1번째: 요약(금+ETF 현재가) 리스트
-            slider.appendChild(renderGlobalIndexSlide()); // 2번째: 글로벌 지수
+            slider.appendChild(summarySlide);
+            slider.appendChild(renderGlobalIndexSlide());
 
             getOrderedItems().forEach((itemObj, index) => {
                 const view = buildDisplayValues(itemObj);
@@ -1916,12 +1790,11 @@
             updateDots();
         }
 
-        // 당겨서 새로고침: 현재 보이는 화면의 스크롤 위치가 맨 위일 때만 아래로 당기는 제스처를 인식
         function setupPullToRefresh() {
             const indicator = document.getElementById("pull-refresh-indicator");
             const pullIconEl = document.getElementById("pull-refresh-icon");
             const pullTextEl = document.getElementById("pull-refresh-text");
-            const PULL_THRESHOLD = 70; // 이 거리(px) 이상 당기고 놓으면 새로고침 실행
+            const PULL_THRESHOLD = 70;
             const MAX_VISUAL_PULL = 90;
             let startY = 0;
             let pulling = false;
@@ -1960,7 +1833,7 @@
                 indicator.style.opacity = String(Math.min(1, visualPull / PULL_THRESHOLD));
                 pullIconEl.style.transform = `rotate(${rawDelta}deg)`;
                 pullTextEl.innerText = rawDelta > PULL_THRESHOLD ? "놓으면 새로고침" : "당겨서 새로고침";
-                if (rawDelta > 10) e.preventDefault(); // 당기는 중엔 화면 자체가 딸려 내려가지 않도록
+                if (rawDelta > 10) e.preventDefault();
             }, { passive: false });
 
             document.addEventListener("touchend", () => {
@@ -1969,7 +1842,6 @@
                 pullIconEl.style.transform = "";
 
                 if (rawDelta > PULL_THRESHOLD && !isRefreshing) {
-                    // 새로고침이 실제로 끝날 때까지 인디케이터를 계속 보여줌 (executeFullUpdate가 숨김 처리함)
                     indicator.style.transform = "translate(-50%, 12px)";
                     indicator.style.opacity = "1";
                     pullTextEl.innerText = "새로고침 중...";
@@ -1982,7 +1854,6 @@
             });
         }
 
-        // 서비스워커 등록 - 크롬이 "설치 가능한 앱"으로 인식해서 전체화면(standalone)으로 열리게 하려면 필요
         if ("serviceWorker" in navigator) {
             window.addEventListener("load", () => {
                 navigator.serviceWorker.register("sw.js").catch(err => {
@@ -1991,22 +1862,19 @@
             });
         }
 
-        // 초기 시작
         window.onload = function() {
-            // 사용자가 +/- 버튼으로 커스터마이징한 종목 목록이 저장돼 있으면 기본 7종목 대신 그걸로 시작
             const savedList = loadEtfListFromStorage();
             if (savedList) {
                 ETF_DATABASE.length = 0;
                 savedList.forEach(item => ETF_DATABASE.push(createEtfItem(item)));
-                itemOrder = ETF_DATABASE.map(item => item.id); // 순서 배열도 새 목록 기준으로 재설정
+                itemOrder = ETF_DATABASE.map(item => item.id);
             }
 
             renderApp();
             setupPullToRefresh();
-            syncTickerListToServer(); // 서버가 자동 분봉 스냅샷을 어떤 종목 대상으로 돌릴지 알 수 있게 동기화
-            refreshTradingDayStatus(); // 오늘이 임시공휴일 등으로 실제 휴장인지 KIS에 확인
+            syncTickerListToServer();
+            refreshTradingDayStatus();
 
-            // 새로고침 시 브라우저가 스크롤 위치를 기억해서 엉뚱한 슬라이드로 열리는 경우가 있어, 항상 첫 번째 슬라이드로 고정
             const slider = document.getElementById("main-slider");
             slider.scrollLeft = 0;
             currentSlide = 0;
