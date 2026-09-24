@@ -510,7 +510,13 @@
             return true;
         }
 
+        // 배당/52주/일봉은 하루에도 거의 안 바뀌는 데이터라서, 캐시가 신선하면(아래 시간 이내) 재요청을 건너뛴다.
+        // 당겨서 새로고침을 자주 눌러도 매번 KIS까지 왕복하지 않도록 하기 위한 최소한의 캐시.
+        const DIVIDEND_52WEEK_CACHE_MS = 30 * 60 * 1000; // 배당/52주: 30분
+        const DAILY_CHART_CACHE_MS = 3 * 60 * 1000;      // 일봉: 3분 (당일 캔들이 장중 계속 갱신되니 짧게)
+
         async function fetchDividendData(itemObj) {
+            if (itemObj._divFetchedAt && Date.now() - itemObj._divFetchedAt < DIVIDEND_52WEEK_CACHE_MS) return;
             try {
                 const res = await fetch(`${MY_SERVER}/api/kis-dividend/${itemObj.ticker}`);
                 if (!res.ok) throw new Error("배당 서버 오류");
@@ -545,6 +551,7 @@
                     itemObj.divTrend = null;
                     itemObj.dividendHistory = null;
                 }
+                itemObj._divFetchedAt = Date.now();
             } catch (e) {
                 console.warn(`[${itemObj.ticker}] 분배금 정보 로드 오류:`, e);
                 itemObj.divAmtRaw = 0;
@@ -556,6 +563,7 @@
         }
 
         async function fetch52WeekRange(itemObj) {
+            if (itemObj._rangeFetchedAt && Date.now() - itemObj._rangeFetchedAt < DIVIDEND_52WEEK_CACHE_MS) return;
             try {
                 const res = await fetch(`${MY_SERVER}/api/kis-52week/${itemObj.ticker}`);
                 if (!res.ok) throw new Error("52주 조회 서버 오류");
@@ -569,18 +577,22 @@
                     itemObj.rangeLow = low;
                     itemObj.rangeLabel = "52주";
                 }
+                itemObj._rangeFetchedAt = Date.now();
             } catch (e) {
                 console.warn(`[${itemObj.ticker}] 52주 데이터 로드 오류:`, e);
             }
         }
 
+
         async function fetchDailyChart(itemObj) {
+            if (itemObj._dailyFetchedAt && Date.now() - itemObj._dailyFetchedAt < DAILY_CHART_CACHE_MS) return;
             try {
                 const res = await fetch(`${MY_SERVER}/api/kis-daily-chart/${itemObj.ticker}`);
                 if (!res.ok) throw new Error("일봉 조회 서버 오류");
                 const data = await res.json();
                 if (!data.success || !Array.isArray(data.data)) throw new Error("일봉 데이터 없음");
                 itemObj.dailyChart = data.data;
+                itemObj._dailyFetchedAt = Date.now();
             } catch (e) {
                 console.warn(`[${itemObj.ticker}] 일봉 데이터 로드 오류:`, e);
                 itemObj.dailyChart = null;
@@ -749,24 +761,31 @@
                 updateGoldDiscrepancy();
                 renderApp();
 
-                for (const itemObj of ETF_DATABASE) {
+                await Promise.all(ETF_DATABASE.map(async (itemObj) => {
                     try {
+                        const tasks = [fetchDailyChart(itemObj)];
                         if (!itemObj.isGold) {
-                            await fetchDividendData(itemObj);
-                            await fetch52WeekRange(itemObj);
+                            tasks.push(fetchDividendData(itemObj), fetch52WeekRange(itemObj));
                         }
-                        await fetchDailyChart(itemObj);
                         if (canFetchIntradayNow()) {
-                            await ensureMinuteChartLoaded(itemObj);
+                            tasks.push(ensureMinuteChartLoaded(itemObj));
                         } else if (!itemObj.intradayFallbackHtml || itemObj.intradayFallbackHtmlDate !== getKstTodayYmdFrontend()) {
-                            itemObj.intradayFallbackHtml = await renderIntradayFallbackHtml(itemObj, 60, false);
-                            itemObj.intradayFallbackHtmlDate = getKstTodayYmdFrontend();
+                            tasks.push(
+                                renderIntradayFallbackHtml(itemObj, 60, false).then(html => {
+                                    itemObj.intradayFallbackHtml = html;
+                                    itemObj.intradayFallbackHtmlDate = getKstTodayYmdFrontend();
+                                })
+                            );
                         }
+                        // 종목 하나 안의 배당/52주/일봉/분봉은 서로 의존관계가 없으니 동시에 요청.
+                        // 서버(callKisThrottled)가 어차피 KIS 쪽 속도제한을 큐로 처리해주므로 안전함.
+                        await Promise.all(tasks);
                     } catch (error) {
                         console.error(`[${itemObj.ticker}] 상세정보 업데이트 실패:`, error);
                     }
+                    // 종목마다 끝나는 대로 바로바로 화면 갱신 (전부 끝날 때까지 기다리지 않음)
                     renderApp();
-                }
+                }));
 
                 const successCount = priceResults.filter(Boolean).length;
                 const now = new Date().toLocaleTimeString();
