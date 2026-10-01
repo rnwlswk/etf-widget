@@ -50,7 +50,7 @@
         }
     </style>
 </head>
-<body class="text-slate-900 min-h-screen flex flex-col justify-between items-center p-4 select-none">
+<body class="text-slate-900 min-h-screen flex flex-col justify-between items-center px-4 pb-4 pt-1.5 select-none">
 
     <!-- 당겨서 새로고침 인디케이터 -->
     <div id="pull-refresh-indicator" class="fixed top-3 left-1/2 z-40 rounded-full bg-blue-600 text-white shadow-lg flex items-center gap-2 px-4 py-2.5 opacity-0 pointer-events-none" style="transform: translate(-50%, -40px);">
@@ -60,7 +60,7 @@
         <span id="pull-refresh-text" class="text-[13px] font-bold whitespace-nowrap">당겨서 새로고침</span>
     </div>
 
-    <div class="w-full flex flex-col justify-between h-[calc(100vh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))] pt-3 space-y-4">
+    <div class="w-full flex flex-col justify-between h-[calc(100vh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))] space-y-4">
 
         <!-- 메인 슬라이더 영역 -->
         <main class="flex-1 min-h-0 w-full relative">
@@ -74,10 +74,6 @@
                             <span id="status-text">연동 대기</span>
                             <span class="text-slate-500">·</span>
                             <span id="update-timestamp">-</span>
-                        </div>
-                        <div class="flex items-center gap-1.5 shrink-0">
-                            <button onclick="openRemoveEtfModal()" class="active-scale w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-black text-[17px] leading-none">−</button>
-                            <button onclick="openAddEtfModal()" class="active-scale w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-white font-black text-[17px] leading-none">+</button>
                         </div>
                     </div>
                     <div class="px-2 shrink-0" id="watchlist-tabs-container"></div>
@@ -495,10 +491,16 @@
             ` : "";
 
             return `
-                <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                    ${tabs}
-                    <button class="shrink-0 w-7 h-7 rounded-full bg-blue-50 text-blue-600 font-black active-scale flex items-center justify-center" onclick="createWatchlistPrompt()">+</button>
-                    ${manageButtons}
+                <div class="flex items-center gap-1.5">
+                    <div class="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                        ${tabs}
+                        <button class="shrink-0 w-7 h-7 rounded-full bg-blue-50 text-blue-600 font-black active-scale flex items-center justify-center" onclick="createWatchlistPrompt()" title="리스트 추가">+</button>
+                        ${manageButtons}
+                    </div>
+                    <div class="shrink-0 flex items-center gap-1.5">
+                        <button onclick="openAddEtfModal()" class="active-scale w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-white font-black text-[17px] leading-none" title="종목 추가">+</button>
+                        <button onclick="openRemoveEtfModal()" class="active-scale w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-white font-black text-[17px] leading-none" title="종목 삭제">−</button>
+                    </div>
                 </div>
             `;
         }
