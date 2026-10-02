@@ -136,7 +136,7 @@
             <details class="mt-2 shrink-0">
                 <summary class="text-[12px] text-slate-400 font-bold cursor-pointer select-none">검색이 안 되면 코드로 직접 추가</summary>
                 <div class="space-y-2 mt-2">
-                    <input id="add-etf-ticker" type="text" maxlength="6" placeholder="종목코드 6자리 (예: 458730)" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" style="text-transform: uppercase;" />
+                    <input id="add-etf-ticker" type="text" maxlength="9" placeholder="종목코드 6자리 (예: 458730) / 금현물은 M04020000" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" style="text-transform: uppercase;" />
                     <input id="add-etf-name" type="text" placeholder="종목명 (비워두면 자동조회 시도)" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-[15px]" />
                     <button id="add-etf-submit-btn" onclick="submitAddEtf()" class="active-scale w-full bg-slate-800 text-white rounded-xl py-2.5 text-[15px] font-bold">추가하기</button>
                 </div>
@@ -710,6 +710,7 @@
             slider.scrollTo({ left: slider.clientWidth * index, behavior: "smooth" });
             currentSlide = index;
             updateDots();
+            onSlideChanged(index);
         }
 
         function handleSliderScroll() {
@@ -718,6 +719,7 @@
             if (currentSlide !== index) {
                 currentSlide = index;
                 updateDots();
+                onSlideChanged(index);
             }
         }
 
@@ -1067,6 +1069,56 @@
             }
         }
 
+        // 종목 하나의 "무거운" 상세정보(배당/52주/일봉/분봉)를 받아온다.
+        // 실제로 그 종목 카드를 보거나 계산기를 열 때만 호출되는 지연 로딩용 함수 - 안 보는 종목까지
+        // 전부 미리 받아오지 않도록 해서 초기 로딩 속도를 올리는 게 목적.
+        // 이미 요청이 진행 중이면 그 프로미스를 그대로 재사용해서 중복 호출을 막는다.
+        function loadItemDetailData(itemObj) {
+            if (itemObj._detailLoadPromise) return itemObj._detailLoadPromise;
+            itemObj._detailRequested = true;
+
+            itemObj._detailLoadPromise = (async () => {
+                try {
+                    const tasks = [fetchDailyChart(itemObj)];
+                    if (!itemObj.isGold) {
+                        tasks.push(fetchDividendData(itemObj), fetch52WeekRange(itemObj));
+                    }
+                    if (canFetchIntradayNow()) {
+                        tasks.push(ensureMinuteChartLoaded(itemObj));
+                    } else if (!itemObj.intradayFallbackHtml || itemObj.intradayFallbackHtmlDate !== getKstTodayYmdFrontend()) {
+                        tasks.push(
+                            renderIntradayFallbackHtml(itemObj, 60, false).then(html => {
+                                itemObj.intradayFallbackHtml = html;
+                                itemObj.intradayFallbackHtmlDate = getKstTodayYmdFrontend();
+                            })
+                        );
+                    }
+                    // 종목 하나 안의 배당/52주/일봉/분봉은 서로 의존관계가 없으니 동시에 요청.
+                    // 서버(callKisThrottled)가 어차피 KIS 쪽 속도제한을 큐로 처리해주므로 안전함.
+                    await Promise.all(tasks);
+                } catch (error) {
+                    console.error(`[${itemObj.ticker}] 상세정보 업데이트 실패:`, error);
+                } finally {
+                    itemObj._detailLoadPromise = null; // 다음 새로고침 때 다시 호출될 수 있도록 풀어줌
+                }
+                renderApp();
+            })();
+
+            return itemObj._detailLoadPromise;
+        }
+
+        // 지금 보고 있는 슬라이드가 바뀔 때 호출 - 그 슬라이드에 필요한 무거운 데이터를 그때 받아온다.
+        // (2.."내 종목"상세 카드, 마지막="분배금 계산기" - 계산기는 전체 종목을 한 화면에 모아 보여주니 전부 필요)
+        function onSlideChanged(index) {
+            const items = getOrderedItems();
+            const itemIndex = index - 2;
+            if (itemIndex >= 0 && itemIndex < items.length) {
+                loadItemDetailData(items[itemIndex]);
+            } else if (index === items.length + 2) {
+                items.forEach(loadItemDetailData);
+            }
+        }
+
         async function executeFullUpdate() {
             if (isRefreshing) return;
             isRefreshing = true;
@@ -1091,31 +1143,19 @@
                     fetchGlobalIndexDailyChart(itemObj, "1y")
                 ])).catch(() => {});
 
-                await Promise.all(ETF_DATABASE.map(async (itemObj) => {
-                    try {
-                        const tasks = [fetchDailyChart(itemObj)];
-                        if (!itemObj.isGold) {
-                            tasks.push(fetchDividendData(itemObj), fetch52WeekRange(itemObj));
-                        }
-                        if (canFetchIntradayNow()) {
-                            tasks.push(ensureMinuteChartLoaded(itemObj));
-                        } else if (!itemObj.intradayFallbackHtml || itemObj.intradayFallbackHtmlDate !== getKstTodayYmdFrontend()) {
-                            tasks.push(
-                                renderIntradayFallbackHtml(itemObj, 60, false).then(html => {
-                                    itemObj.intradayFallbackHtml = html;
-                                    itemObj.intradayFallbackHtmlDate = getKstTodayYmdFrontend();
-                                })
-                            );
-                        }
-                        // 종목 하나 안의 배당/52주/일봉/분봉은 서로 의존관계가 없으니 동시에 요청.
-                        // 서버(callKisThrottled)가 어차피 KIS 쪽 속도제한을 큐로 처리해주므로 안전함.
-                        await Promise.all(tasks);
-                    } catch (error) {
-                        console.error(`[${itemObj.ticker}] 상세정보 업데이트 실패:`, error);
-                    }
-                    // 종목마다 끝나는 대로 바로바로 화면 갱신 (전부 끝날 때까지 기다리지 않음)
-                    renderApp();
-                }));
+                // 배당/52주/일봉/분봉처럼 무거운 상세정보는 "이미 한 번이라도 열어본 적 있는" 종목만 새로고침한다.
+                // 아직 한 번도 안 본 종목은 그 종목 카드로 넘어가거나 계산기를 열 때 그제서야 받아온다(onSlideChanged) -
+                // 안 보는 종목까지 매번 다 받아오지 않으니 첫 로딩/새로고침이 훨씬 가벼워짐.
+                // 지금 보고 있는 슬라이드에 필요한 종목(들)은 한 번도 안 봤어도 지금 당장 받아오도록 같이 포함.
+                const itemsForUpdate = getOrderedItems();
+                const toLoad = new Set(itemsForUpdate.filter(item => item._detailRequested));
+                const currentItemIndex = currentSlide - 2;
+                if (currentItemIndex >= 0 && currentItemIndex < itemsForUpdate.length) {
+                    toLoad.add(itemsForUpdate[currentItemIndex]);
+                } else if (currentSlide === itemsForUpdate.length + 2) {
+                    itemsForUpdate.forEach(item => toLoad.add(item));
+                }
+                await Promise.all([...toLoad].map(loadItemDetailData));
 
                 const successCount = priceResults.filter(Boolean).length;
                 const now = new Date().toLocaleTimeString();
@@ -1474,15 +1514,20 @@
             }
         }
 
+        const GOLD_TICKER = "M04020000"; // KRX 금 현물 - 일반 종목코드(숫자/영문 6자리)와 형식이 다른 특수 코드
+
         async function submitAddEtf() {
             const ticker = document.getElementById("add-etf-ticker").value.trim().toUpperCase();
             const manualName = document.getElementById("add-etf-name").value.trim();
+            const isGold = ticker === GOLD_TICKER;
 
-            if (!/^[0-9A-Z]{6}$/.test(ticker)) return showAddEtfError("종목코드는 숫자/영문 6자리여야 해요. (예: 458730)");
+            if (!isGold && !/^[0-9A-Z]{6}$/.test(ticker)) return showAddEtfError("종목코드는 숫자/영문 6자리여야 해요. (예: 458730, 금현물은 M04020000)");
             if (ETF_DATABASE.some(i => i.ticker === ticker)) return showAddEtfError("이미 추가된 종목코드예요.");
 
             const submitBtn = document.getElementById("add-etf-submit-btn");
             let name = manualName;
+
+            if (!name && isGold) name = "KRX 금 현물"; // 금현물은 일반 종목명 검색으로 안 잡혀서 기본값으로 바로 채움
 
             if (!name) {
                 submitBtn.disabled = true;
@@ -1496,7 +1541,7 @@
                 return showAddEtfError("종목명을 자동으로 못 찾았어요. 직접 입력해주세요.");
             }
 
-            const newItem = createEtfItem({ id: `custom_${ticker}`, name, ticker, isGold: false });
+            const newItem = createEtfItem({ id: `custom_${ticker}`, name, ticker, isGold });
             ETF_DATABASE.push(newItem);
             itemOrder.push(newItem.id);
             saveWatchlistsToStorage();
@@ -1505,9 +1550,11 @@
             renderApp();
 
             try {
-                await fetchPriceDataSafe(newItem);
-                await fetchDividendData(newItem);
-                await fetch52WeekRange(newItem);
+                await fetchPriceDataSafe(newItem); // 금현물은 이 응답 안에 52주 고가/저가가 같이 포함됨
+                if (!newItem.isGold) {
+                    await fetchDividendData(newItem);
+                    await fetch52WeekRange(newItem);
+                }
                 await fetchDailyChart(newItem);
             } catch (e) {
                 console.warn(`[${newItem.ticker}] 신규 종목 데이터 로드 오류:`, e);
