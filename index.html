@@ -2432,4 +2432,41 @@
                 if (rawDelta > PULL_THRESHOLD && !isRefreshing) {
                     indicator.style.transform = "translate(-50%, 12px)";
                     indicator.style.opacity = "1";
-                    pullTextEl.inne
+                    pullTextEl.innerText = "새로고침 중...";
+                    executeFullUpdate();
+                } else {
+                    indicator.style.transform = "translate(-50%, -40px)";
+                    indicator.style.opacity = "0";
+                }
+                rawDelta = 0;
+            });
+        }
+
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", () => {
+                navigator.serviceWorker.register("sw.js").catch(err => {
+                    console.warn("서비스워커 등록 실패:", err);
+                });
+            });
+        }
+
+        window.onload = function() {
+            loadWatchlistsFromStorage();
+            applyWatchlistToEtfDatabase(currentWatchlistId);
+            applyWatchlistAccounts(currentWatchlistId);
+
+            renderApp();
+            setupPullToRefresh();
+            syncTickerListToServer();
+            refreshTradingDayStatus();
+
+            const slider = document.getElementById("main-slider");
+            slider.scrollLeft = 0;
+            currentSlide = 0;
+            updateDots();
+
+            setTimeout(() => { executeFullUpdate(); }, 300);
+        };
+    </script>
+</body>
+</html>
