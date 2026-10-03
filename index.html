@@ -1128,11 +1128,18 @@
             applyStatus("loading");
             showProgressToast("KIS 중계 서버에서 실시간 데이터를 받아옵니다...", "blue");
 
-            try {
-                const priceResults = await Promise.all(ETF_DATABASE.map(fetchPriceDataSafe));
-                renderApp();
+            // 실제로 어느 단계가 느린지 눈으로 보려고 넣은 속도 측정용 로그 (브라우저 개발자도구 콘솔에서 확인 가능)
+            const __t0 = performance.now();
 
-                await Promise.all(GLOBAL_INDEX_LIST.map(fetchGlobalIndex));
+            try {
+                // 종목 가격이랑 지수 가격은 서로 의존관계가 없는데 예전엔 순서대로(직렬로) 기다리고 있었음.
+                // 둘 다 동시에 쏴서 왕복시간이 겹치게 함 (서버 쪽 KIS 호출 큐는 어차피 안전하게 줄 세워줌).
+                const [priceResults] = await Promise.all([
+                    Promise.all(ETF_DATABASE.map(fetchPriceDataSafe)),
+                    Promise.all(GLOBAL_INDEX_LIST.map(fetchGlobalIndex))
+                ]);
+                const __t1 = performance.now();
+                console.log(`[속도측정] 종목 가격 ${ETF_DATABASE.length}개 + 지수 가격 ${GLOBAL_INDEX_LIST.length}개 (동시 진행): ${(__t1 - __t0).toFixed(0)}ms`);
                 updateGoldDiscrepancy();
                 renderApp();
 
@@ -1156,18 +1163,23 @@
                     itemsForUpdate.forEach(item => toLoad.add(item));
                 }
                 await Promise.all([...toLoad].map(loadItemDetailData));
+                const __t3 = performance.now();
+                console.log(`[속도측정] 상세정보(${toLoad.size}종목): ${(__t3 - __t1).toFixed(0)}ms (누적 ${(__t3 - __t0).toFixed(0)}ms)`);
 
                 const successCount = priceResults.filter(Boolean).length;
                 const now = new Date().toLocaleTimeString();
 
+                const __priceSec = ((__t1 - __t0) / 1000).toFixed(1);
+                const __elapsedSec = ((performance.now() - __t0) / 1000).toFixed(1);
+
                 if (successCount === ETF_DATABASE.length) {
                     document.getElementById("update-timestamp").innerText = now;
                     applyStatus("success");
-                    showProgressToast("데이터 동기화를 완벽하게 성공했습니다.", "emerald");
+                    showProgressToast(`데이터 동기화를 완벽하게 성공했습니다. (가격 ${__priceSec}초 · 전체 ${__elapsedSec}초)`, "emerald");
                 } else if (successCount > 0) {
                     document.getElementById("update-timestamp").innerText = now;
                     applyStatus("partial");
-                    showProgressToast(`일부 자산(${successCount}개)만 업데이트 되었습니다.`, "emerald");
+                    showProgressToast(`일부 자산(${successCount}개)만 업데이트 되었습니다. (${__elapsedSec}초)`, "emerald");
                 } else {
                     document.getElementById("update-timestamp").innerText = now;
                     applyStatus("error");
@@ -2420,41 +2432,4 @@
                 if (rawDelta > PULL_THRESHOLD && !isRefreshing) {
                     indicator.style.transform = "translate(-50%, 12px)";
                     indicator.style.opacity = "1";
-                    pullTextEl.innerText = "새로고침 중...";
-                    executeFullUpdate();
-                } else {
-                    indicator.style.transform = "translate(-50%, -40px)";
-                    indicator.style.opacity = "0";
-                }
-                rawDelta = 0;
-            });
-        }
-
-        if ("serviceWorker" in navigator) {
-            window.addEventListener("load", () => {
-                navigator.serviceWorker.register("sw.js").catch(err => {
-                    console.warn("서비스워커 등록 실패:", err);
-                });
-            });
-        }
-
-        window.onload = function() {
-            loadWatchlistsFromStorage();
-            applyWatchlistToEtfDatabase(currentWatchlistId);
-            applyWatchlistAccounts(currentWatchlistId);
-
-            renderApp();
-            setupPullToRefresh();
-            syncTickerListToServer();
-            refreshTradingDayStatus();
-
-            const slider = document.getElementById("main-slider");
-            slider.scrollLeft = 0;
-            currentSlide = 0;
-            updateDots();
-
-            setTimeout(() => { executeFullUpdate(); }, 300);
-        };
-    </script>
-</body>
-</html>
+                    pullTextEl.inne
