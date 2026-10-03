@@ -21,9 +21,21 @@
     <link rel="preconnect" href="https://cdn.tailwindcss.com">
 
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        mono: ['"IBM Plex Mono"', 'monospace']
+                    }
+                }
+            }
+        };
+    </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap');
         body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; color: #0f172a; -webkit-tap-highlight-color: transparent; overflow: hidden; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); font-variant-numeric: tabular-nums; }
+        .num-mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: -0.02em; }
         .snap-x { scroll-snap-type: x mandatory; scroll-behavior: smooth; }
         .snap-center { scroll-snap-align: center; scroll-snap-stop: always; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -69,11 +81,10 @@
                 <!-- 요약 리스트 슬라이드 -->
                 <div id="summary-slide" class="w-full h-full shrink-0 snap-center flex flex-col justify-start space-y-2 p-0.5">
                     <div class="px-2 flex items-center justify-between gap-1.5 shrink-0">
-                        <div class="flex items-center gap-1.5 text-[14px] text-slate-600 font-mono">
+                        <div class="flex items-center gap-2 text-[13px] text-slate-500 num-mono">
                             <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
                             <span id="status-text">연동 대기</span>
-                            <span class="text-slate-500">·</span>
-                            <span id="update-timestamp">-</span>
+                            <span id="update-timestamp" class="text-slate-600"></span>
                         </div>
                     </div>
                     <div class="px-2 shrink-0" id="watchlist-tabs-container"></div>
@@ -1779,7 +1790,7 @@
             row.className = `bg-white border border-slate-300 border-l-4 ${barColor} active-scale rounded-2xl p-2.5 flex justify-between items-center cursor-pointer transition-all duration-200 hover:border-slate-400 hover:bg-slate-50 ${didChange ? 'flash-updated' : ''}`;
 
             const priceHtml = view.hasValue
-                ? `<div class="text-[19px] font-black text-slate-900" data-price-el="1">${view.displayPrice}</div>
+                ? `<div class="text-[19px] font-black text-slate-900 num-mono" data-price-el="1">${view.displayPrice}</div>
                    <div class="text-[16px] ${view.changeColorClass} mt-1">${view.displayChange}</div>`
                 : `<div class="skeleton h-[19px] w-16 ml-auto"></div>
                    <div class="skeleton h-[13px] w-20 ml-auto mt-1.5"></div>`;
@@ -1875,7 +1886,7 @@
                         <div class="grid grid-cols-2 gap-2 bg-slate-100 border border-slate-200 rounded-2xl p-2.5 shadow-inner">
                             <div>
                                 <span class="text-[17px] text-slate-600 block font-bold">현재가</span>
-                                <div class="text-[27px] font-black text-slate-900 mt-1 tracking-tight">${view.displayPrice}</div>
+                                <div class="text-[27px] font-black text-slate-900 num-mono mt-1 tracking-tight">${view.displayPrice}</div>
                             </div>
                             <div class="text-right">
                                 <span class="text-[17px] text-slate-600 block font-bold">등락가 및 등락율</span>
@@ -2266,7 +2277,7 @@
                 }
 
                 const priceBlockHtml = hasValue
-                    ? `<div class="text-[19px] font-black text-slate-900" data-global-price-el="${itemObj.key}">${displayPrice}</div>
+                    ? `<div class="text-[19px] font-black text-slate-900 num-mono" data-global-price-el="${itemObj.key}">${displayPrice}</div>
                        <div class="text-[16px] ${changeColorClass} mt-1">${displayChange}</div>
                        <div class="text-[14px] text-slate-900">전일 종가 ${displayPrevClose}</div>`
                     : `<div class="skeleton h-[19px] w-20 ml-auto"></div>
@@ -2361,7 +2372,15 @@
             slider.appendChild(summarySlide);
             slider.appendChild(renderGlobalIndexSlide());
 
-            getOrderedItems().forEach((itemObj, index) => {
+            const orderedItems = getOrderedItems();
+            if (orderedItems.length === 0) {
+                // "뭔가 고장나서" 비어 보이는 것과 "이 리스트에 종목을 아직 안 넣어서" 비어 보이는 걸 구분할 수 있게
+                const emptyMsg = document.createElement("div");
+                emptyMsg.className = "text-center text-slate-400 text-[14px] py-10";
+                emptyMsg.innerText = "이 리스트엔 아직 종목이 없어요. 위의 + 버튼으로 추가해보세요.";
+                summaryContainer.appendChild(emptyMsg);
+            }
+            orderedItems.forEach((itemObj, index) => {
                 const view = buildDisplayValues(itemObj);
                 summaryContainer.appendChild(renderSummaryRow(itemObj, index, view));
                 slider.appendChild(renderDetailCard(itemObj, view));
@@ -2450,22 +2469,48 @@
             });
         }
 
+        // 초기화 도중 뭔가 하나라도 터지면(특히 localStorage에 남아있는 예전 형식 데이터 때문에) 화면이
+        // 통째로 빈 채로 멈춰버리는 걸 막기 위한 안전장치. 에러를 콘솔뿐 아니라 화면에도 바로 보여줘서,
+        // 개발자도구 없이도 스크린샷 한 장으로 원인을 바로 알 수 있게 한다.
+        function showFatalInitError(err) {
+            console.error("초기화 실패:", err);
+            const box = document.createElement("div");
+            box.style.cssText = "position:fixed;inset:0;z-index:9999;background:#fff;padding:20px;font-family:monospace;font-size:13px;color:#be123c;overflow:auto;white-space:pre-wrap;";
+            box.innerText = "초기화 중 오류가 발생했어요. 이 화면을 캡처해서 보여주세요.\n\n" + (err && err.stack ? err.stack : String(err));
+            const resetBtn = document.createElement("button");
+            resetBtn.innerText = "저장된 데이터 초기화하고 다시 시작";
+            resetBtn.style.cssText = "margin-top:16px;padding:10px 16px;background:#0f172a;color:#fff;border-radius:8px;font-family:sans-serif;";
+            resetBtn.onclick = () => {
+                if (confirm("저장해둔 종목 리스트/계좌 데이터를 전부 지우고 기본값으로 다시 시작할까요?")) {
+                    localStorage.clear();
+                    location.reload();
+                }
+            };
+            box.appendChild(document.createElement("br"));
+            box.appendChild(resetBtn);
+            document.body.appendChild(box);
+        }
+
         window.onload = function() {
-            loadWatchlistsFromStorage();
-            applyWatchlistToEtfDatabase(currentWatchlistId);
-            applyWatchlistAccounts(currentWatchlistId);
+            try {
+                loadWatchlistsFromStorage();
+                applyWatchlistToEtfDatabase(currentWatchlistId);
+                applyWatchlistAccounts(currentWatchlistId);
 
-            renderApp();
-            setupPullToRefresh();
-            syncTickerListToServer();
-            refreshTradingDayStatus();
+                renderApp();
+                setupPullToRefresh();
+                syncTickerListToServer();
+                refreshTradingDayStatus();
 
-            const slider = document.getElementById("main-slider");
-            slider.scrollLeft = 0;
-            currentSlide = 0;
-            updateDots();
+                const slider = document.getElementById("main-slider");
+                slider.scrollLeft = 0;
+                currentSlide = 0;
+                updateDots();
 
-            setTimeout(() => { executeFullUpdate(); }, 300);
+                setTimeout(() => { executeFullUpdate(); }, 300);
+            } catch (err) {
+                showFatalInitError(err);
+            }
         };
     </script>
 </body>
